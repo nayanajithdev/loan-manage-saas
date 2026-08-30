@@ -1,0 +1,40 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/
+
+# Env / local config
+.env
+.env.*
+!.env.example
+config/database.local.php
+!config/database.local.example.php
+
+# Dependencies
+vendor/
+node_modules/
+
+# Build/cache
+.cache/
+tmp/
+temp/
+
+# XAMPP / runtime generated
+uploads/
+storage/
+Update Panel/
+
+# PHP
+*.cache
+*.bak
+
+# Test coverage
+coverage/
+
+# Git
+*.orig

@@ -1,0 +1,1432 @@
+(function () {
+    const applyNumericKeyboardHints = () => {
+        const numericNames = new Set([
+            'loan_number',
+            'installment_no',
+            'installment_count',
+            'timeframe_value',
+            'interest_rate_months',
+            'live_update_interval_seconds',
+        ]);
+        const decimalNamePattern = /(amount|principal|interest|rate|total|balance|payment|received|paid)/i;
+
+        document.querySelectorAll('input').forEach((input) => {
+            if (!(input instanceof HTMLInputElement)) {
+                return;
+            }
+
+            const name = input.name || '';
+            if (numericNames.has(name)) {
+                input.setAttribute('inputmode', 'numeric');
+                input.setAttribute('pattern', '[0-9]*');
+                return;
+            }
+
+            if (input.type === 'number' || decimalNamePattern.test(name)) {
+                input.setAttribute('inputmode', 'decimal');
+            }
+        });
+    };
+
+    applyNumericKeyboardHints();
+})();
+
+(function () {
+    const form = document.querySelector('[data-theme-toggle-form]');
+    if (!(form instanceof HTMLFormElement)) {
+        return;
+    }
+
+    const button = form.querySelector('[data-theme-toggle]');
+    const input = form.querySelector('[data-theme-toggle-input]');
+    if (!(button instanceof HTMLButtonElement) || !(input instanceof HTMLInputElement)) {
+        return;
+    }
+
+    const normalizeTheme = (theme) => theme === 'light' ? 'light' : 'dark';
+
+    const applyTheme = (theme) => {
+        const normalized = normalizeTheme(theme);
+        const nextTheme = normalized === 'light' ? 'dark' : 'light';
+
+        document.body.classList.toggle('theme-light', normalized === 'light');
+        document.body.classList.toggle('theme-dark', normalized === 'dark');
+        document.body.dataset.theme = normalized;
+
+        input.value = nextTheme;
+        button.dataset.currentTheme = normalized;
+        button.setAttribute('aria-label', normalized === 'light' ? 'Switch to dark mode' : 'Switch to light mode');
+        button.setAttribute('title', normalized === 'light' ? 'Dark mode' : 'Light mode');
+    };
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const previousTheme = normalizeTheme(document.body.dataset.theme || button.dataset.currentTheme || 'dark');
+        const requestedTheme = normalizeTheme(input.value);
+        applyTheme(requestedTheme);
+
+        const formData = new FormData(form);
+        formData.set('theme', requestedTheme);
+
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'fetch',
+                },
+                credentials: 'same-origin',
+            });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || !payload || payload.ok !== true) {
+                throw new Error('Theme update failed.');
+            }
+            applyTheme(payload.theme);
+        } catch (error) {
+            applyTheme(previousTheme);
+        }
+    });
+})();
+
+(function () {
+    const applyMobileTableStack = () => {
+        const tables = document.querySelectorAll('.table-wrap table');
+        tables.forEach((table) => {
+            if (!(table instanceof HTMLTableElement)) {
+                return;
+            }
+
+            if (table.matches('.docs-table-compact, .reports-table-compact, [data-no-mobile-stack]')) {
+                return;
+            }
+
+            const headCells = Array.from(table.querySelectorAll('thead th'));
+            if (headCells.length === 0) {
+                return;
+            }
+
+            const labels = headCells.map((cell) => {
+                return (cell.textContent || '').replace(/\s+/g, ' ').trim();
+            });
+
+            table.classList.add('mobile-stack-table');
+
+            const rows = table.querySelectorAll('tbody tr');
+            rows.forEach((row) => {
+                const cells = Array.from(row.children).filter((child) => child.tagName === 'TD');
+                cells.forEach((cell, index) => {
+                    if (!(cell instanceof HTMLTableCellElement)) {
+                        return;
+                    }
+
+                    if (cell.colSpan > 1) {
+                        cell.setAttribute('data-label', '');
+                        return;
+                    }
+
+                    const label = labels[index] || '';
+                    cell.setAttribute('data-label', label);
+                });
+            });
+        });
+    };
+
+    window.applyMobileTableStack = applyMobileTableStack;
+    applyMobileTableStack();
+})();
+
+(function () {
+    const shell = document.querySelector('.app-shell');
+    const toggle = document.querySelector('[data-sidebar-toggle]');
+    const overlay = document.querySelector('[data-sidebar-overlay]');
+    const sidebar = document.getElementById('main-sidebar');
+
+    if (!(shell instanceof HTMLElement) || !(toggle instanceof HTMLElement) || !(overlay instanceof HTMLElement) || !(sidebar instanceof HTMLElement)) {
+        return;
+    }
+
+    const isMobile = () => window.matchMedia('(max-width: 1024px)').matches;
+
+    const setOpen = (open) => {
+        shell.classList.toggle('sidebar-open', open);
+        document.body.classList.toggle('sidebar-open', open);
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+
+    toggle.addEventListener('click', () => {
+        if (!isMobile()) {
+            return;
+        }
+        setOpen(!shell.classList.contains('sidebar-open'));
+    });
+
+    overlay.addEventListener('click', () => {
+        setOpen(false);
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            setOpen(false);
+        }
+    });
+
+    sidebar.querySelectorAll('a').forEach((link) => {
+        link.addEventListener('click', () => {
+            if (isMobile()) {
+                setOpen(false);
+            }
+        });
+    });
+
+    window.addEventListener('resize', () => {
+        if (!isMobile()) {
+            setOpen(false);
+        }
+    });
+})();
+
+(function () {
+    const chip = document.getElementById('js-connection-chip');
+    const text = document.getElementById('js-connection-text');
+    if (!(chip instanceof HTMLElement) || !(text instanceof HTMLElement)) {
+        return;
+    }
+
+    const applyState = () => {
+        const online = navigator.onLine;
+        chip.classList.toggle('is-online', online);
+        chip.classList.toggle('is-offline', !online);
+        text.textContent = online ? 'Online' : 'Offline';
+    };
+
+    window.addEventListener('online', applyState);
+    window.addEventListener('offline', applyState);
+    applyState();
+})();
+
+(function () {
+    const dateInputs = document.querySelectorAll('input[type="date"]');
+    dateInputs.forEach((input) => {
+        if (!(input instanceof HTMLInputElement)) {
+            return;
+        }
+
+        input.addEventListener('click', () => {
+            if (input.disabled || input.readOnly) {
+                return;
+            }
+            if (typeof input.showPicker === 'function') {
+                try {
+                    input.showPicker();
+                } catch (_error) {
+                    // Ignore browser restrictions; native behavior still applies.
+                }
+            }
+        });
+    });
+})();
+
+(function () {
+    const widgets = document.querySelectorAll('[data-searchable-select]');
+    widgets.forEach((widget) => {
+        const search = widget.querySelector('[data-select-search]');
+        const valueInput = widget.querySelector('[data-select-value]');
+        const menu = widget.querySelector('[data-select-menu]');
+        const empty = widget.querySelector('[data-select-empty]');
+
+        if (!(search instanceof HTMLInputElement) || !(valueInput instanceof HTMLInputElement) || !(menu instanceof HTMLElement)) {
+            return;
+        }
+
+        const options = Array.from(menu.querySelectorAll('[data-select-option]'))
+            .filter((option) => option instanceof HTMLButtonElement)
+            .map((option) => ({
+                element: option,
+                value: option.getAttribute('value') || '',
+                label: option.textContent || '',
+                search: (option.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase(),
+            }));
+
+        const setOpen = (open) => {
+            menu.hidden = !open;
+            widget.classList.toggle('open', open);
+            search.setAttribute('aria-expanded', open ? 'true' : 'false');
+        };
+
+        const render = () => {
+            const query = search.value.trim().toLowerCase();
+            let visibleCount = 0;
+
+            options.forEach((option, index) => {
+                const isMatch = query === '' ? index < 5 : option.search.includes(query);
+                option.element.hidden = !isMatch;
+                if (isMatch) {
+                    visibleCount += 1;
+                }
+            });
+
+            const selectedOption = options.find((option) => option.value === valueInput.value);
+            if (!selectedOption || search.value.trim() !== selectedOption.label.trim()) {
+                valueInput.value = '';
+            }
+
+            if (empty instanceof HTMLElement) {
+                empty.hidden = visibleCount > 0 || query === '';
+            }
+        };
+
+        search.addEventListener('focus', () => {
+            render();
+            setOpen(true);
+        });
+
+        search.addEventListener('click', () => {
+            render();
+            setOpen(true);
+        });
+
+        search.addEventListener('input', () => {
+            render();
+            setOpen(true);
+        });
+
+        options.forEach((option) => {
+            option.element.addEventListener('click', () => {
+                valueInput.value = option.value;
+                search.value = option.label.trim();
+                render();
+                setOpen(false);
+            });
+        });
+
+        document.addEventListener('click', (event) => {
+            const target = event.target;
+            if (target instanceof Node && !widget.contains(target)) {
+                setOpen(false);
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                setOpen(false);
+                search.blur();
+            }
+        });
+    });
+})();
+
+(function () {
+    const menus = document.querySelectorAll('[data-user-menu]');
+    if (!menus.length) {
+        return;
+    }
+
+    const menuEntries = Array.from(menus).map((menu) => {
+        const toggle = menu.querySelector('[data-user-menu-toggle]');
+        const dropdown = menu.querySelector('[data-user-menu-dropdown]');
+        if (!(toggle instanceof HTMLElement) || !(dropdown instanceof HTMLElement)) {
+            return null;
+        }
+        return { menu, toggle };
+    }).filter(Boolean);
+
+    if (!menuEntries.length) {
+        return;
+    }
+
+    const setOpen = (entry, open) => {
+        entry.menu.classList.toggle('open', open);
+        entry.toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+
+    const closeAll = () => {
+        menuEntries.forEach((entry) => setOpen(entry, false));
+    };
+
+    menuEntries.forEach((entry) => {
+        entry.toggle.addEventListener('click', (event) => {
+            event.preventDefault();
+            const isOpen = entry.menu.classList.contains('open');
+            closeAll();
+            setOpen(entry, !isOpen);
+        });
+    });
+
+    document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof Node)) {
+            return;
+        }
+
+        let clickedInsideAnyMenu = false;
+        menuEntries.forEach((entry) => {
+            if (entry.menu.contains(target)) {
+                clickedInsideAnyMenu = true;
+            }
+        });
+
+        if (!clickedInsideAnyMenu) {
+            closeAll();
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closeAll();
+        }
+    });
+})();
+
+(function () {
+    const pollConfig = document.getElementById('poll-config');
+    if (!pollConfig) {
+        return;
+    }
+
+    const endpoint = pollConfig.getAttribute('data-poll-endpoint');
+    if (!endpoint) {
+        return;
+    }
+
+    const intervalMs = Number(pollConfig.getAttribute('data-poll-interval') || '10000');
+    const includeQuery = pollConfig.getAttribute('data-poll-include-query') === '1';
+    const updatedLabel = document.getElementById('js-last-updated');
+
+    let isPolling = false;
+
+    const isEditingForm = () => {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLElement)) {
+            return false;
+        }
+        return Boolean(active.closest('form') && active.matches('input, select, textarea'));
+    };
+
+    const buildPollUrl = () => {
+        const url = new URL(endpoint, window.location.origin);
+        if (includeQuery) {
+            const query = new URLSearchParams(window.location.search);
+            query.forEach((value, key) => {
+                url.searchParams.set(key, value);
+            });
+        }
+        url.searchParams.set('_ts', String(Date.now()));
+        return url.toString();
+    };
+
+    const applyTargets = (targets) => {
+        Object.entries(targets).forEach(([selector, html]) => {
+            const el = document.querySelector(selector);
+            if (el) {
+                el.innerHTML = String(html);
+            }
+        });
+
+        if (typeof window.applyMobileTableStack === 'function') {
+            window.applyMobileTableStack();
+        }
+    };
+
+    const runPoll = async () => {
+        if (isPolling || document.hidden || isEditingForm()) {
+            return;
+        }
+        isPolling = true;
+
+        try {
+            const response = await fetch(buildPollUrl(), {
+                method: 'GET',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                cache: 'no-store',
+            });
+
+            if (!response.ok) {
+                throw new Error('Polling request failed.');
+            }
+
+            const payload = await response.json();
+            if (payload && payload.targets && typeof payload.targets === 'object') {
+                applyTargets(payload.targets);
+            }
+
+            if (updatedLabel) {
+                const stamp = payload.updated_at || new Date().toLocaleTimeString();
+                updatedLabel.textContent = `Last update: ${stamp}`;
+            }
+        } catch (error) {
+            if (updatedLabel) {
+                updatedLabel.textContent = 'Last update: reconnecting...';
+            }
+        } finally {
+            isPolling = false;
+        }
+    };
+
+    setInterval(runPoll, Math.max(intervalMs, 3000));
+})();
+
+(function () {
+    const dateModeSelect = document.getElementById('date-mode-select');
+    const collectionStatusSelect = document.getElementById('collection-status-select');
+
+    if (!dateModeSelect && !collectionStatusSelect) {
+        return;
+    }
+
+    const submitParentForm = (select) => {
+        const form = select.closest('form');
+        if (form instanceof HTMLFormElement) {
+            form.submit();
+        }
+    };
+
+    if (dateModeSelect) {
+        dateModeSelect.addEventListener('change', () => {
+            if (collectionStatusSelect instanceof HTMLSelectElement && dateModeSelect.value !== 'today') {
+                collectionStatusSelect.value = 'pending';
+                collectionStatusSelect.disabled = true;
+            }
+            submitParentForm(dateModeSelect);
+        });
+    }
+    if (collectionStatusSelect) {
+        collectionStatusSelect.addEventListener('change', () => submitParentForm(collectionStatusSelect));
+    }
+})();
+
+(function () {
+    document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) {
+            return;
+        }
+
+        const printButton = target.closest('[data-print-loan-collection-report], [data-print-daily-collections-report], [data-print-profit-report]');
+        if (!printButton) {
+            return;
+        }
+
+        const printReportSelector = printButton.hasAttribute('data-print-loan-collection-report')
+            ? '.loan-collection-print-report'
+            : printButton.hasAttribute('data-print-daily-collections-report')
+                ? '.daily-collections-print-report'
+                : '.profit-print-report';
+        const printReport = document.querySelector(printReportSelector);
+        if (!printReport) {
+            return;
+        }
+
+        document.querySelectorAll('.loan-collection-print-report, .daily-collections-print-report, .profit-print-report').forEach((report) => {
+            report.classList.remove('is-print-active');
+        });
+        printReport.classList.add('is-print-active');
+
+        const originalTitle = document.title;
+        const printFileName = (printButton.getAttribute('data-print-filename') || '').trim();
+        let restoreTitleTimer = null;
+        const restoreTitleOnly = () => {
+            if (restoreTitleTimer !== null) {
+                window.clearTimeout(restoreTitleTimer);
+                restoreTitleTimer = null;
+            }
+            document.title = originalTitle;
+        };
+        const restorePrintState = () => {
+            restoreTitleOnly();
+            document.querySelectorAll('.loan-collection-print-report, .daily-collections-print-report, .profit-print-report').forEach((report) => {
+                report.classList.remove('is-print-active');
+            });
+            window.removeEventListener('afterprint', restorePrintState);
+        };
+
+        if (printFileName !== '') {
+            document.title = printFileName;
+        }
+        window.addEventListener('afterprint', restorePrintState, { once: true });
+        restoreTitleTimer = window.setTimeout(restoreTitleOnly, 3000);
+
+        window.print();
+    });
+})();
+
+(function () {
+    const confirmForms = document.querySelectorAll('form[data-confirm]');
+    confirmForms.forEach((form) => {
+        form.addEventListener('submit', (event) => {
+            if (form.getAttribute('data-confirmed') === '1') {
+                return;
+            }
+
+            const message = form.getAttribute('data-confirm') || 'Are you sure?';
+            if (form.getAttribute('data-inline-confirm') === '1') {
+                const submitter = event.submitter instanceof HTMLButtonElement || event.submitter instanceof HTMLInputElement
+                    ? event.submitter
+                    : form.querySelector('[type="submit"]');
+                if (!(submitter instanceof HTMLElement) || submitter.disabled) {
+                    event.preventDefault();
+                    return;
+                }
+
+                if (submitter.getAttribute('data-inline-confirm-submit') === '1') {
+                    form.setAttribute('data-confirmed', '1');
+                    return;
+                }
+
+                event.preventDefault();
+
+                if (form.querySelector('[data-inline-confirm-actions]') || document.querySelector('[data-inline-confirm-modal]')) {
+                    return;
+                }
+
+                if (form.getAttribute('data-inline-confirm-password') === '1' && form.getAttribute('data-password-confirmed') !== '1') {
+                    const passwordModal = document.createElement('div');
+                    passwordModal.className = 'inline-confirm-modal-backdrop';
+                    passwordModal.setAttribute('data-inline-confirm-modal', '1');
+                    passwordModal.innerHTML = `
+                        <div class="inline-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="inline-confirm-password-title">
+                            <div class="inline-confirm-modal-title" id="inline-confirm-password-title">Confirm Password</div>
+                            <p class="inline-confirm-modal-message"></p>
+                            <div class="field inline-confirm-password-field">
+                                <label for="inline-confirm-password-input">Password</label>
+                                <input type="password" id="inline-confirm-password-input" autocomplete="current-password" required>
+                                <small class="inline-confirm-password-error" hidden>Password is required.</small>
+                            </div>
+                            <div class="inline-confirm-modal-actions" data-inline-confirm-actions="1"></div>
+                        </div>
+                    `;
+
+                    const passwordMessage = passwordModal.querySelector('.inline-confirm-modal-message');
+                    const passwordInput = passwordModal.querySelector('#inline-confirm-password-input');
+                    const passwordError = passwordModal.querySelector('.inline-confirm-password-error');
+                    const passwordActions = passwordModal.querySelector('[data-inline-confirm-actions]');
+                    const continueButton = document.createElement('button');
+                    continueButton.type = 'button';
+                    continueButton.className = 'btn btn-danger';
+                    continueButton.textContent = 'Continue';
+                    const passwordCancelButton = document.createElement('button');
+                    passwordCancelButton.type = 'button';
+                    passwordCancelButton.className = 'btn';
+                    passwordCancelButton.textContent = 'Cancel';
+
+                    if (passwordMessage) {
+                        passwordMessage.textContent = form.getAttribute('data-inline-confirm-password-message') || 'Enter your password to continue.';
+                    }
+                    if (passwordActions) {
+                        passwordActions.append(continueButton, passwordCancelButton);
+                    }
+
+                    const closePasswordModal = () => {
+                        passwordModal.remove();
+                        form.removeAttribute('data-password-confirmed');
+                        const passwordFieldName = form.getAttribute('data-inline-confirm-password-name') || 'confirm_password';
+                        const existingPassword = Array.from(form.querySelectorAll('input[type="hidden"]'))
+                            .find((input) => input.getAttribute('name') === passwordFieldName);
+                        if (existingPassword) {
+                            existingPassword.remove();
+                        }
+                        submitter.hidden = false;
+                        submitter.focus();
+                    };
+
+                    continueButton.addEventListener('click', async () => {
+                        if (!(passwordInput instanceof HTMLInputElement) || passwordInput.value.trim() === '') {
+                            if (passwordError instanceof HTMLElement) {
+                                passwordError.hidden = false;
+                                passwordError.textContent = 'Password is required.';
+                            }
+                            if (passwordInput instanceof HTMLInputElement) {
+                                passwordInput.focus();
+                            }
+                            return;
+                        }
+
+                        const verifyUrl = form.getAttribute('data-inline-confirm-password-verify-url') || '';
+                        const csrfInput = form.querySelector('input[name="_csrf"]');
+                        if (!verifyUrl || !(csrfInput instanceof HTMLInputElement)) {
+                            if (passwordError instanceof HTMLElement) {
+                                passwordError.hidden = false;
+                                passwordError.textContent = 'Password check is not available.';
+                            }
+                            return;
+                        }
+
+                        continueButton.disabled = true;
+                        continueButton.textContent = 'Checking...';
+
+                        let verified = false;
+                        let verifyMessage = 'Incorrect password.';
+                        try {
+                            const verifyData = new FormData();
+                            verifyData.set('_csrf', csrfInput.value);
+                            verifyData.set('password', passwordInput.value);
+                            const response = await fetch(verifyUrl, {
+                                method: 'POST',
+                                body: verifyData,
+                                headers: {
+                                    'X-Requested-With': 'XMLHttpRequest',
+                                },
+                            });
+                            const payload = await response.json().catch(() => ({}));
+                            if (payload && payload.logged_out === true) {
+                                window.location.href = typeof payload.redirect === 'string' && payload.redirect !== ''
+                                    ? payload.redirect
+                                    : 'login.php';
+                                return;
+                            }
+                            verified = response.ok && payload && payload.ok === true;
+                            if (payload && typeof payload.message === 'string' && payload.message.trim() !== '') {
+                                verifyMessage = payload.message;
+                            }
+                        } catch (_error) {
+                            verifyMessage = 'Could not check password. Please try again.';
+                        }
+
+                        if (!verified) {
+                            continueButton.disabled = false;
+                            continueButton.textContent = 'Continue';
+                            if (passwordError instanceof HTMLElement) {
+                                passwordError.hidden = false;
+                                passwordError.textContent = verifyMessage;
+                            }
+                            passwordInput.value = '';
+                            passwordInput.focus();
+                            return;
+                        }
+
+                        const passwordFieldName = form.getAttribute('data-inline-confirm-password-name') || 'confirm_password';
+                        let passwordHiddenInput = Array.from(form.querySelectorAll('input[type="hidden"]'))
+                            .find((input) => input.getAttribute('name') === passwordFieldName);
+                        if (!(passwordHiddenInput instanceof HTMLInputElement)) {
+                            passwordHiddenInput = document.createElement('input');
+                            passwordHiddenInput.type = 'hidden';
+                            passwordHiddenInput.name = passwordFieldName;
+                            form.appendChild(passwordHiddenInput);
+                        }
+                        passwordHiddenInput.value = passwordInput.value;
+                        form.setAttribute('data-password-confirmed', '1');
+                        passwordModal.remove();
+
+                        if (typeof form.requestSubmit === 'function') {
+                            form.requestSubmit(submitter instanceof HTMLElement ? submitter : undefined);
+                        } else {
+                            form.submit();
+                        }
+                    });
+
+                    if (passwordInput instanceof HTMLInputElement) {
+                        passwordInput.addEventListener('keydown', (passwordEvent) => {
+                            if (passwordEvent.key === 'Enter') {
+                                passwordEvent.preventDefault();
+                                continueButton.click();
+                            }
+                        });
+                    }
+                    passwordCancelButton.addEventListener('click', closePasswordModal, { once: true });
+
+                    document.body.append(passwordModal);
+                    if (passwordInput instanceof HTMLInputElement) {
+                        passwordInput.focus();
+                    }
+                    return;
+                }
+
+                const confirmMode = form.getAttribute('data-inline-confirm-mode') === 'modal' ? 'modal' : 'inline';
+                const confirmDelay = Math.max(0, Number.parseInt(form.getAttribute('data-inline-confirm-delay') || '1000', 10) || 0);
+                const confirmLabel = (form.getAttribute('data-inline-confirm-label') || 'Confirm').trim() || 'Confirm';
+                const confirmButton = document.createElement('button');
+                confirmButton.type = 'submit';
+                const confirmVariant = form.getAttribute('data-inline-confirm-variant') === 'danger' ? 'btn-danger' : 'btn-success';
+                confirmButton.className = `btn ${confirmVariant} inline-confirm-button is-waiting`;
+                confirmButton.disabled = true;
+                const confirmProgress = document.createElement('span');
+                confirmProgress.className = 'inline-confirm-progress';
+                confirmProgress.setAttribute('aria-hidden', 'true');
+                confirmProgress.style.setProperty('--inline-confirm-progress-duration', `${Math.max(confirmDelay, 1)}ms`);
+                const confirmText = document.createElement('span');
+                confirmText.textContent = confirmLabel;
+                confirmButton.append(confirmProgress, confirmText);
+                confirmButton.setAttribute('data-inline-confirm-submit', '1');
+                if (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) {
+                    confirmButton.formNoValidate = submitter.formNoValidate;
+                    ['formaction', 'formenctype', 'formmethod', 'formtarget'].forEach((attributeName) => {
+                        const attributeValue = submitter.getAttribute(attributeName);
+                        if (attributeValue !== null) {
+                            confirmButton.setAttribute(attributeName, attributeValue);
+                        }
+                    });
+                }
+
+                const cancelButton = document.createElement('button');
+                cancelButton.type = 'button';
+                cancelButton.className = 'btn';
+                cancelButton.textContent = 'Cancel';
+
+                let actions = null;
+                let modal = null;
+                const peerSubmitters = [];
+                if (confirmMode === 'modal') {
+                    modal = document.createElement('div');
+                    modal.className = 'inline-confirm-modal-backdrop';
+                    modal.setAttribute('data-inline-confirm-modal', '1');
+                    modal.innerHTML = `
+                        <div class="inline-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="inline-confirm-modal-title">
+                            <div class="inline-confirm-modal-title" id="inline-confirm-modal-title">Confirm Action</div>
+                            <p class="inline-confirm-modal-message"></p>
+                            <div class="inline-confirm-modal-actions" data-inline-confirm-actions="1"></div>
+                        </div>
+                    `;
+                    const messageNode = modal.querySelector('.inline-confirm-modal-message');
+                    const modalActions = modal.querySelector('[data-inline-confirm-actions]');
+                    if (messageNode) {
+                        messageNode.textContent = message;
+                    }
+                    if (modalActions) {
+                        modalActions.append(confirmButton, cancelButton);
+                    }
+                    document.body.append(modal);
+                    confirmButton.type = 'button';
+                    confirmButton.addEventListener('click', () => {
+                        if (confirmButton.disabled) {
+                            return;
+                        }
+                        form.setAttribute('data-confirmed', '1');
+                        if (typeof form.requestSubmit === 'function') {
+                            form.requestSubmit(submitter instanceof HTMLElement ? submitter : undefined);
+                        } else {
+                            form.submit();
+                        }
+                    });
+                } else {
+                    form.querySelectorAll('button, input[type="submit"], input[type="image"]').forEach((control) => {
+                        if (!(control instanceof HTMLElement) || control === submitter || control.hidden) {
+                            return;
+                        }
+                        if (control instanceof HTMLButtonElement && control.type !== 'submit') {
+                            return;
+                        }
+                        if (control instanceof HTMLInputElement && !['submit', 'image'].includes(control.type)) {
+                            return;
+                        }
+                        control.hidden = true;
+                        peerSubmitters.push(control);
+                    });
+
+                    actions = document.createElement('div');
+                    actions.className = 'inline-confirm-actions';
+                    actions.setAttribute('data-inline-confirm-actions', '1');
+                    actions.setAttribute('aria-label', message);
+                    actions.append(confirmButton, cancelButton);
+                    submitter.hidden = true;
+                    submitter.insertAdjacentElement('afterend', actions);
+                }
+                confirmButton.focus();
+                const enableConfirmTimer = window.setTimeout(() => {
+                    confirmButton.disabled = false;
+                    confirmButton.classList.remove('is-waiting');
+                }, confirmDelay);
+
+                cancelButton.addEventListener('click', () => {
+                    window.clearTimeout(enableConfirmTimer);
+                    if (modal) {
+                        modal.remove();
+                    }
+                    if (actions) {
+                        actions.remove();
+                    }
+                    peerSubmitters.forEach((control) => {
+                        control.hidden = false;
+                    });
+                    form.removeAttribute('data-confirmed');
+                    if (form.getAttribute('data-inline-confirm-password') === '1') {
+                        form.removeAttribute('data-password-confirmed');
+                        const passwordFieldName = form.getAttribute('data-inline-confirm-password-name') || 'confirm_password';
+                        const passwordHiddenInput = Array.from(form.querySelectorAll('input[type="hidden"]'))
+                            .find((input) => input.getAttribute('name') === passwordFieldName);
+                        if (passwordHiddenInput) {
+                            passwordHiddenInput.remove();
+                        }
+                    }
+                    submitter.hidden = false;
+                    submitter.focus();
+                }, { once: true });
+
+                return;
+            }
+
+            if (!window.confirm(message)) {
+                event.preventDefault();
+            }
+        });
+    });
+})();
+
+(function () {
+    const normalizeSafeLocalUrl = (rawUrl) => {
+        if (typeof rawUrl !== 'string') {
+            return null;
+        }
+
+        const trimmed = rawUrl.trim();
+        if (!trimmed) {
+            return null;
+        }
+
+        // Block control characters in case of malformed/injected attributes.
+        if (/[\u0000-\u001F\u007F]/.test(trimmed)) {
+            return null;
+        }
+
+        let parsed;
+        try {
+            parsed = new URL(trimmed, window.location.origin);
+        } catch (_error) {
+            return null;
+        }
+
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+            return null;
+        }
+
+        if (parsed.origin !== window.location.origin) {
+            return null;
+        }
+
+        if (!parsed.pathname.startsWith('/')) {
+            return null;
+        }
+
+        return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    };
+
+    document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) {
+            return;
+        }
+
+        if (target.closest('a, button, input, select, textarea, label')) {
+            return;
+        }
+
+        const selectTarget = target.closest('[data-select-url]');
+        if (!selectTarget) {
+            return;
+        }
+
+        const safeUrl = normalizeSafeLocalUrl(selectTarget.getAttribute('data-select-url'));
+        if (safeUrl) {
+            let finalUrl = safeUrl;
+
+            const isMobileViewport = window.matchMedia('(max-width: 1024px)').matches;
+            if (isMobileViewport) {
+                const mobileSafeUrl = normalizeSafeLocalUrl(selectTarget.getAttribute('data-mobile-select-url'));
+                if (mobileSafeUrl) {
+                    finalUrl = mobileSafeUrl;
+                }
+            }
+
+            // Mobile 2-step flow for today collections:
+            // selecting an installment opens the dedicated record step.
+            if (isMobileViewport) {
+                try {
+                    const currentPath = window.location.pathname.toLowerCase();
+                    const isTodayCollectionsPage = currentPath.endsWith('/pages/today_collections.php');
+                    if (isTodayCollectionsPage) {
+                        const parsed = new URL(safeUrl, window.location.origin);
+                        if (parsed.pathname.toLowerCase().endsWith('/pages/today_collections.php')) {
+                            parsed.searchParams.set('mobile_record', '1');
+                            finalUrl = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+                        }
+                    }
+                } catch (_error) {
+                    // Fallback to safeUrl when URL parsing fails.
+                }
+            }
+
+            window.location.assign(finalUrl);
+        }
+    });
+})();
+
+(function () {
+    const form = document.getElementById('loan-form');
+    if (!form) {
+        return;
+    }
+
+    const principalInput = form.querySelector('[name="principal_amount"]');
+    const interestInput = form.querySelector('[name="interest_rate"]');
+    const interestTypeInput = form.querySelector('[name="interest_rate_type"]');
+    const interestMonthsInput = form.querySelector('[name="interest_rate_months"]');
+    const interestMonthsField = form.querySelector('[data-interest-months-field]');
+    const issuedDateInput = form.querySelector('[name="issued_date"]');
+    const firstPaymentDateInput = form.querySelector('[name="first_payment_date"]');
+    const frequencyInput = form.querySelector('[name="installment_frequency"]');
+    const timeframeValueInput = form.querySelector('[name="timeframe_value"]');
+    const timeframeUnitInput = form.querySelector('[name="timeframe_unit"]');
+    const roundedToggle = form.querySelector('[name="use_rounded_installment"]');
+    const roundedAmountInput = form.querySelector('[name="rounded_installment_amount"]');
+    const roundedHint = document.getElementById('rounded-installment-hint');
+    const totalEl = document.getElementById('preview-total');
+    const installmentEl = document.getElementById('preview-installment');
+    const profitEl = document.getElementById('preview-profit');
+    const installmentCountEl = document.getElementById('preview-installment-count');
+    const endDateEl = document.getElementById('preview-end-date');
+    [totalEl, installmentEl, profitEl, installmentCountEl, endDateEl].forEach((target) => {
+        if (target instanceof HTMLElement && !target.dataset.originalPreview) {
+            target.dataset.originalPreview = target.textContent || '';
+        }
+    });
+    const isEditLoanForm = Boolean(form.querySelector('[name="loan_id"]'));
+    const collectedTotalValue = Number(form.dataset.collectedTotal || 0);
+    const paidOrLinkedCountValue = Number(form.dataset.paidOrLinkedCount || 0);
+    const protectedUnpaidCountValue = Number(form.dataset.protectedUnpaidCount || 0);
+    const collectedTotal = isEditLoanForm && Number.isFinite(collectedTotalValue) ? collectedTotalValue : 0;
+    const paidOrLinkedCount = isEditLoanForm && Number.isFinite(paidOrLinkedCountValue) ? Math.max(Math.floor(paidOrLinkedCountValue), 0) : 0;
+    const protectedUnpaidCount = isEditLoanForm && Number.isFinite(protectedUnpaidCountValue) ? Math.max(Math.floor(protectedUnpaidCountValue), 0) : 0;
+    const isIsoDateValue = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+    let unpaidDueDates = [];
+    try {
+        const parsedUnpaidDueDates = JSON.parse(form.getAttribute('data-unpaid-due-dates') || '[]');
+        unpaidDueDates = Array.isArray(parsedUnpaidDueDates)
+            ? parsedUnpaidDueDates.filter((value) => isIsoDateValue(value))
+            : [];
+    } catch (_error) {
+        unpaidDueDates = [];
+    }
+    const scheduleLastDueDate = isIsoDateValue(form.dataset.scheduleLastDueDate || '')
+        ? form.dataset.scheduleLastDueDate
+        : '';
+    const inlineCustomerToggle = document.querySelector('[data-inline-customer-toggle]');
+    const inlineCustomerPanel = form.querySelector('[data-inline-customer-panel]');
+    const inlineCustomerFlag = form.querySelector('[data-inline-customer-flag]');
+    const inlineCustomerRequiredFields = Array.from(form.querySelectorAll('[data-inline-customer-required]'));
+    const customerValueInput = form.querySelector('[data-select-value]');
+    const customerSearchInput = form.querySelector('[data-select-search]');
+    let holidayDates = [];
+    try {
+        holidayDates = JSON.parse(form.getAttribute('data-holiday-dates') || '[]');
+    } catch (_error) {
+        holidayDates = [];
+    }
+    const holidaySet = new Set(Array.isArray(holidayDates) ? holidayDates : []);
+
+    const setInlineCustomerMode = (enabled) => {
+        if (!(inlineCustomerPanel instanceof HTMLElement) || !(inlineCustomerFlag instanceof HTMLInputElement)) {
+            return;
+        }
+        const forceNewCustomer = inlineCustomerToggle instanceof HTMLButtonElement
+            && inlineCustomerToggle.getAttribute('data-inline-customer-force-new') === '1';
+        const shouldEnable = forceNewCustomer ? true : enabled;
+
+        inlineCustomerPanel.hidden = !shouldEnable;
+        inlineCustomerFlag.value = shouldEnable ? '1' : '0';
+        if (inlineCustomerToggle instanceof HTMLButtonElement) {
+            inlineCustomerToggle.setAttribute('aria-pressed', shouldEnable ? 'true' : 'false');
+        }
+        inlineCustomerRequiredFields.forEach((field) => {
+            if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement) {
+                field.required = shouldEnable;
+            }
+        });
+
+        if (customerValueInput instanceof HTMLInputElement) {
+            customerValueInput.disabled = shouldEnable;
+            if (shouldEnable) {
+                customerValueInput.value = '';
+            }
+        }
+        if (customerSearchInput instanceof HTMLInputElement) {
+            customerSearchInput.disabled = shouldEnable;
+            if (shouldEnable) {
+                customerSearchInput.value = '';
+                customerSearchInput.placeholder = 'New customer will be used';
+            } else {
+                customerSearchInput.placeholder = 'Select customer';
+            }
+        }
+    };
+
+    if (inlineCustomerPanel instanceof HTMLElement && inlineCustomerFlag instanceof HTMLInputElement) {
+        setInlineCustomerMode(inlineCustomerFlag.value === '1');
+    }
+
+    if (inlineCustomerToggle instanceof HTMLButtonElement) {
+        inlineCustomerToggle.addEventListener('click', () => {
+            setInlineCustomerMode(inlineCustomerFlag instanceof HTMLInputElement && inlineCustomerFlag.value !== '1');
+        });
+    }
+
+    const toNumber = (value) => {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : 0;
+    };
+
+    const formatMoney = (value) => {
+        const decimals = form.dataset.moneyDecimals === '0' ? 0 : 2;
+        return new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
+        }).format(value);
+    };
+
+    const setPreviewValue = (target, newValue, changed) => {
+        if (!(target instanceof HTMLElement)) {
+            return;
+        }
+
+        const original = target.dataset.originalPreview || target.textContent || '';
+        if (isEditLoanForm && changed && String(original).trim() !== String(newValue).trim()) {
+            target.innerHTML = '';
+
+            const oldSpan = document.createElement('span');
+            oldSpan.className = 'preview-old-value';
+            oldSpan.textContent = original;
+
+            const arrowSpan = document.createElement('span');
+            arrowSpan.className = 'preview-change-arrow';
+            arrowSpan.textContent = ' -> ';
+
+            const newSpan = document.createElement('span');
+            newSpan.className = 'preview-new-value';
+            newSpan.textContent = newValue;
+
+            target.append(oldSpan, arrowSpan, newSpan);
+            return;
+        }
+
+        target.textContent = newValue;
+    };
+
+    const validIsoDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+
+    const addToIsoDate = (isoDate, amount, unit) => {
+        if (!validIsoDate(isoDate)) {
+            return '';
+        }
+
+        const [year, month, day] = isoDate.split('-').map(Number);
+        const date = new Date(Date.UTC(year, month - 1, day));
+        if (unit === 'months') {
+            date.setUTCMonth(date.getUTCMonth() + amount);
+        } else {
+            date.setUTCDate(date.getUTCDate() + amount);
+        }
+
+        return [
+            date.getUTCFullYear(),
+            String(date.getUTCMonth() + 1).padStart(2, '0'),
+            String(date.getUTCDate()).padStart(2, '0'),
+        ].join('-');
+    };
+
+    const formatDisplayDate = (isoDate) => {
+        if (!validIsoDate(isoDate)) {
+            return '-';
+        }
+
+        const [year, month, day] = isoDate.split('-');
+
+        return `${day}/${month}/${year}`;
+    };
+
+    const nextCollectibleDate = (isoDate) => {
+        let candidate = isoDate;
+        for (let guard = 0; guard < 366; guard += 1) {
+            if (!holidaySet.has(candidate)) {
+                return candidate;
+            }
+            candidate = addToIsoDate(candidate, 1, 'days');
+        }
+
+        return isoDate;
+    };
+
+    const nextFrequencyDate = (isoDate, frequency) => {
+        if (frequency === 'weekly') {
+            return addToIsoDate(isoDate, 7, 'days');
+        }
+        if (frequency === 'monthly') {
+            return addToIsoDate(isoDate, 1, 'months');
+        }
+        return addToIsoDate(isoDate, 1, 'days');
+    };
+
+    const calculateEndDate = (installmentCount, frequency) => {
+        const firstDueDate = form.getAttribute('data-first-due-date') || '';
+        const firstPaymentDate = firstPaymentDateInput instanceof HTMLInputElement ? firstPaymentDateInput.value : '';
+        const issuedDate = issuedDateInput ? issuedDateInput.value : '';
+        const startDate = issuedDate || form.getAttribute('data-start-date') || '';
+        let dueDate = !isEditLoanForm && validIsoDate(firstPaymentDate)
+            ? firstPaymentDate
+            : (form.getAttribute('data-preserve-first-due-date') === '1' && validIsoDate(firstDueDate)
+                ? firstDueDate
+                : addToIsoDate(startDate, 1, 'days'));
+
+        if (!validIsoDate(dueDate) || installmentCount <= 0) {
+            return '';
+        }
+
+        let endDate = nextCollectibleDate(dueDate);
+        for (let i = 1; i <= installmentCount; i += 1) {
+            endDate = nextCollectibleDate(dueDate);
+            dueDate = nextFrequencyDate(endDate, frequency);
+        }
+
+        return endDate;
+    };
+
+    const syncFirstPaymentDate = () => {
+        if (isEditLoanForm || !(firstPaymentDateInput instanceof HTMLInputElement) || !(issuedDateInput instanceof HTMLInputElement)) {
+            return;
+        }
+
+        const issuedDate = issuedDateInput.value || form.getAttribute('data-start-date') || '';
+        const suggestedDate = nextCollectibleDate(addToIsoDate(issuedDate, 1, 'days'));
+        if (validIsoDate(suggestedDate)) {
+            firstPaymentDateInput.min = suggestedDate;
+            if (!validIsoDate(firstPaymentDateInput.value) || firstPaymentDateInput.value < suggestedDate) {
+                firstPaymentDateInput.value = suggestedDate;
+            }
+        }
+    };
+
+    const calculateCollectedLoanEndDate = (unpaidCount, frequency) => {
+        const safeUnpaidCount = Math.max(Math.floor(unpaidCount), 0);
+        if (safeUnpaidCount <= 0) {
+            return '';
+        }
+
+        if (safeUnpaidCount <= unpaidDueDates.length) {
+            return unpaidDueDates
+                .slice(0, safeUnpaidCount)
+                .reduce((latest, dueDate) => dueDate > latest ? dueDate : latest, '');
+        }
+
+        let endDate = scheduleLastDueDate || unpaidDueDates[unpaidDueDates.length - 1] || '';
+        if (!validIsoDate(endDate)) {
+            return '';
+        }
+
+        for (let slotCount = unpaidDueDates.length; slotCount < safeUnpaidCount; slotCount += 1) {
+            endDate = nextCollectibleDate(nextFrequencyDate(endDate, frequency));
+        }
+
+        return endDate;
+    };
+
+    const initialLoanEditValues = isEditLoanForm ? {
+        principal: principalInput instanceof HTMLInputElement ? principalInput.value : '',
+        interestRate: interestInput instanceof HTMLInputElement ? interestInput.value : '',
+        interestType: interestTypeInput instanceof HTMLSelectElement ? interestTypeInput.value : '',
+        interestMonths: interestMonthsInput instanceof HTMLInputElement ? interestMonthsInput.value : '',
+        issuedDate: issuedDateInput instanceof HTMLInputElement ? issuedDateInput.value : '',
+        frequency: frequencyInput instanceof HTMLSelectElement ? frequencyInput.value : '',
+        timeframeValue: timeframeValueInput instanceof HTMLInputElement ? timeframeValueInput.value : '',
+        timeframeUnit: timeframeUnitInput instanceof HTMLSelectElement ? timeframeUnitInput.value : '',
+    } : null;
+
+    const numericValueChanged = (oldValue, newValue) => Math.abs(toNumber(oldValue) - toNumber(newValue)) >= 0.005;
+
+    const loanEditPreviewChanged = () => {
+        if (!initialLoanEditValues) {
+            return true;
+        }
+
+        return numericValueChanged(initialLoanEditValues.principal, principalInput instanceof HTMLInputElement ? principalInput.value : '')
+            || numericValueChanged(initialLoanEditValues.interestRate, interestInput instanceof HTMLInputElement ? interestInput.value : '')
+            || initialLoanEditValues.interestType !== (interestTypeInput instanceof HTMLSelectElement ? interestTypeInput.value : '')
+            || numericValueChanged(initialLoanEditValues.interestMonths, interestMonthsInput instanceof HTMLInputElement ? interestMonthsInput.value : '')
+            || initialLoanEditValues.issuedDate !== (issuedDateInput instanceof HTMLInputElement ? issuedDateInput.value : '')
+            || initialLoanEditValues.frequency !== (frequencyInput instanceof HTMLSelectElement ? frequencyInput.value : '')
+            || numericValueChanged(initialLoanEditValues.timeframeValue, timeframeValueInput instanceof HTMLInputElement ? timeframeValueInput.value : '')
+            || initialLoanEditValues.timeframeUnit !== (timeframeUnitInput instanceof HTMLSelectElement ? timeframeUnitInput.value : '');
+    };
+
+    const installmentCountFromTimeframe = (frequency, timeframeValue, timeframeUnit) => {
+        const safeTimeframe = Math.max(timeframeValue, 1);
+        const totalDays = timeframeUnit === 'months' ? safeTimeframe * 30 : safeTimeframe;
+
+        if (frequency === 'weekly') {
+            return Math.max(Math.ceil(totalDays / 7), 1);
+        }
+
+        if (frequency === 'monthly') {
+            if (timeframeUnit === 'months') {
+                return safeTimeframe;
+            }
+            return Math.max(Math.ceil(totalDays / 30), 1);
+        }
+
+        return Math.max(totalDays, 1);
+    };
+
+    const toggleInterestMonthsField = () => {
+        if (!interestTypeInput || !interestMonthsField || !interestMonthsInput) {
+            return;
+        }
+
+        const isMonthly = interestTypeInput.value === 'monthly';
+        interestMonthsField.style.display = isMonthly ? '' : 'none';
+        interestMonthsInput.disabled = !isMonthly;
+        interestMonthsInput.required = isMonthly;
+        if (isMonthly && toNumber(interestMonthsInput.value) < 1) {
+            interestMonthsInput.value = '1';
+        }
+    };
+
+    const updatePreview = () => {
+        const editToggle = isEditLoanForm ? form.querySelector('[data-loan-detail-edit-toggle]') : null;
+        const editModeActive = !isEditLoanForm || (editToggle instanceof HTMLInputElement && editToggle.checked);
+        if (isEditLoanForm && !editModeActive) {
+            return;
+        }
+
+        const principal = toNumber(principalInput.value);
+        const interestRate = toNumber(interestInput.value);
+        const interestType = interestTypeInput && interestTypeInput.value === 'monthly'
+            ? 'monthly'
+            : 'amount_based';
+        const interestMonths = Math.max(toNumber(interestMonthsInput ? interestMonthsInput.value : 1), 1);
+        const timeframeValue = Math.max(toNumber(timeframeValueInput.value), 1);
+        const timeframeUnit = timeframeUnitInput.value === 'months' ? 'months' : 'days';
+        const frequency = frequencyInput.value;
+        const baseCount = installmentCountFromTimeframe(frequency, timeframeValue, timeframeUnit);
+        const monthlyFactor = interestType === 'monthly' ? interestMonths : 1;
+        const total = principal + ((principal * interestRate / 100) * monthlyFactor);
+        const profit = total - principal;
+        const roundedAmount = roundedAmountInput ? toNumber(roundedAmountInput.value) : 0;
+        const roundedEnabled = roundedToggle ? roundedToggle.checked : roundedAmount > 0;
+        const previewChanged = loanEditPreviewChanged() || (roundedEnabled && roundedAmount > 0);
+        if (isEditLoanForm && !previewChanged) {
+            return;
+        }
+
+        let count = baseCount;
+        let installment = count > 0 ? total / count : 0;
+
+        let lastAmountBasis = total;
+        let collectedLoanUnpaidCount = 0;
+
+        if (isEditLoanForm && collectedTotal > 0) {
+            const unpaidTotal = Math.max(total - collectedTotal, 0);
+            let unpaidCount;
+
+            if (roundedEnabled && roundedAmount > 0 && unpaidTotal > 0) {
+                unpaidCount = Math.max(Math.ceil(unpaidTotal / roundedAmount), protectedUnpaidCount, 1);
+                installment = roundedAmount;
+            } else {
+                unpaidCount = Math.max(baseCount - paidOrLinkedCount, protectedUnpaidCount, 1);
+                installment = unpaidCount > 0 ? unpaidTotal / unpaidCount : 0;
+            }
+
+            count = paidOrLinkedCount + unpaidCount;
+            lastAmountBasis = unpaidTotal;
+            collectedLoanUnpaidCount = unpaidCount;
+        } else if (roundedEnabled && roundedAmount > 0 && total > 0) {
+            count = Math.max(Math.ceil(total / roundedAmount), 1);
+            installment = roundedAmount;
+        }
+
+        const previewEndDate = isEditLoanForm && collectedTotal > 0
+            ? (calculateCollectedLoanEndDate(collectedLoanUnpaidCount, frequency) || calculateEndDate(count, frequency))
+            : calculateEndDate(count, frequency);
+
+        setPreviewValue(installmentCountEl, String(count), previewChanged);
+        setPreviewValue(endDateEl, formatDisplayDate(previewEndDate), previewChanged);
+        setPreviewValue(totalEl, formatMoney(total), previewChanged);
+        setPreviewValue(installmentEl, formatMoney(installment), previewChanged);
+        if (roundedHint) {
+            if (isEditLoanForm && total < collectedTotal) {
+                roundedHint.textContent = 'Total repayable cannot be less than already collected.';
+            } else if (roundedEnabled && roundedAmount > 0 && lastAmountBasis > 0) {
+                const unpaidInstallmentCount = isEditLoanForm && collectedTotal > 0
+                    ? Math.max(count - paidOrLinkedCount, 1)
+                    : count;
+                const lastAmount = lastAmountBasis - (roundedAmount * Math.max(unpaidInstallmentCount - 1, 0));
+                roundedHint.textContent = `Last installment will be ${formatMoney(lastAmount)}.`;
+            } else {
+                roundedHint.textContent = isEditLoanForm && collectedTotal > 0
+                    ? 'Preview uses the unpaid balance after already collected amount.'
+                    : 'Type a per installment amount to customize the schedule.';
+            }
+        }
+        if (profitEl) {
+            profitEl.textContent = formatMoney(profit);
+        }
+    };
+
+    const syncRoundedInstallment = () => {
+        if (!roundedToggle || !roundedAmountInput) {
+            return;
+        }
+
+        const enabled = roundedToggle.checked;
+        const roundingRow = roundedToggle.closest('.loan-rounding-row');
+        if (roundingRow instanceof HTMLElement) {
+            roundingRow.classList.toggle('is-checked', enabled);
+        }
+        roundedAmountInput.disabled = !enabled;
+        roundedAmountInput.required = enabled;
+        if (!enabled) {
+            roundedAmountInput.value = '';
+        }
+        updatePreview();
+    };
+
+    [principalInput, interestInput, interestTypeInput, issuedDateInput, frequencyInput, timeframeValueInput, timeframeUnitInput].forEach((el) => {
+        if (!el) {
+            return;
+        }
+        el.addEventListener('input', updatePreview);
+        el.addEventListener('change', updatePreview);
+    });
+    if (interestMonthsInput) {
+        interestMonthsInput.addEventListener('input', updatePreview);
+        interestMonthsInput.addEventListener('change', updatePreview);
+    }
+    if (firstPaymentDateInput instanceof HTMLInputElement) {
+        firstPaymentDateInput.addEventListener('input', updatePreview);
+        firstPaymentDateInput.addEventListener('change', updatePreview);
+        firstPaymentDateInput.addEventListener('click', () => {
+            if (typeof firstPaymentDateInput.showPicker === 'function') {
+                try {
+                    firstPaymentDateInput.showPicker();
+                } catch (_error) {
+                    // Browser will fall back to its normal date input behavior.
+                }
+            }
+        });
+    }
+    if (!isEditLoanForm && issuedDateInput instanceof HTMLInputElement) {
+        issuedDateInput.addEventListener('input', () => {
+            syncFirstPaymentDate();
+            updatePreview();
+        });
+        issuedDateInput.addEventListener('change', () => {
+            syncFirstPaymentDate();
+            updatePreview();
+        });
+    }
+    if (interestTypeInput) {
+        interestTypeInput.addEventListener('change', toggleInterestMonthsField);
+        interestTypeInput.addEventListener('input', toggleInterestMonthsField);
+    }
+    if (roundedToggle) {
+        roundedToggle.addEventListener('change', syncRoundedInstallment);
+    }
+    if (roundedAmountInput) {
+        roundedAmountInput.addEventListener('input', updatePreview);
+        roundedAmountInput.addEventListener('change', updatePreview);
+    }
+
+    toggleInterestMonthsField();
+    syncFirstPaymentDate();
+    if (roundedToggle) {
+        syncRoundedInstallment();
+    } else if (!isEditLoanForm) {
+        updatePreview();
+    }
+})();

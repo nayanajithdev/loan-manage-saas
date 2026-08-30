@@ -1,0 +1,8 @@
+<IfModule mod_headers.c>
+  Header set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+</IfModule>
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^f3fd7t3/?$ f3fd7t3.php [L]
+</IfModule>
