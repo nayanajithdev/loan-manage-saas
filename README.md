@@ -38,7 +38,7 @@ PHP + MySQL multi-tenant loan management system for small lending businesses.
 4. Open:
    - Tenant login: `http://localhost/loan-manage-saas/login.php`
    - Tenant register: `http://localhost/loan-manage-saas/register.php`
-   - SaaS Admin: `http://localhost/loan-manage-saas/f3fd7t3.php`
+   - SaaS Admin: `http://localhost/loan-manage-saas/f3fd7t3`
 5. If this is first startup and no superadmin exists:
    - Open the SaaS Admin URL.
    - Create the first SaaS Admin account.
@@ -48,3 +48,10 @@ PHP + MySQL multi-tenant loan management system for small lending businesses.
 - Print receipt after collection
 - Reports by date range
 - Penalty/late-fee rules
+
+## Production
+1. Copy `.env.example` to `.env`.
+2. Set `APP_ENV=production`, `APP_DEBUG=0`, and `FORCE_HTTPS=1`.
+3. Set `APP_URL` to the HTTPS domain.
+4. Change `OWNER_SECRET_PATH` before launch.
+5. Use a dedicated MySQL user with a strong password instead of `root`.

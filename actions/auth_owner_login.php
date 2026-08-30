@@ -5,9 +5,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/../includes/bootstrap.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    redirect('f3fd7t3.php');
+    redirect(owner_secret_login_path());
 }
-require_csrf('f3fd7t3.php');
+require_csrf(owner_secret_login_path());
 
 $username = trim((string) ($_POST['username'] ?? ''));
 $password = (string) ($_POST['password'] ?? '');
@@ -22,7 +22,7 @@ if (!empty($lockStatus['locked'])) {
         'retry_after_seconds' => $retryAfterSeconds,
     ]);
     set_flash('error', 'Too many failed attempts. Try again in ' . $retryAfterMinutes . ' minute(s).');
-    redirect('f3fd7t3.php');
+    redirect(owner_secret_login_path());
 }
 
 if ($username === '' || $password === '') {
@@ -31,7 +31,7 @@ if ($username === '' || $password === '') {
         'username' => $username,
     ]);
     set_flash('error', 'Username and password are required.');
-    redirect('f3fd7t3.php');
+    redirect(owner_secret_login_path());
 }
 
 $stmt = $pdo->prepare(
@@ -56,7 +56,7 @@ if (!$user || !password_verify($password, (string) $user['password_hash']) || !i
     } else {
         set_flash('error', 'Invalid username or password.');
     }
-    redirect('f3fd7t3.php');
+    redirect(owner_secret_login_path());
 }
 
 if ((string) ($user['status'] ?? 'active') !== 'active') {
@@ -65,7 +65,7 @@ if ((string) ($user['status'] ?? 'active') !== 'active') {
         'user_id' => (int) ($user['id'] ?? 0),
     ]);
     set_flash('error', 'Your account is inactive.');
-    redirect('f3fd7t3.php');
+    redirect(owner_secret_login_path());
 }
 
 auth_login_clear_failures($username);

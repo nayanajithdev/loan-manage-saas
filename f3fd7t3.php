@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/includes/bootstrap.php';
 
+$requestPath = current_request_app_path();
+if ($requestPath !== owner_secret_login_path() && $requestPath !== owner_secret_login_path() . '.php') {
+    http_response_code(404);
+    exit('Not found');
+}
+
 if (is_logged_in()) {
     redirect(authenticated_landing_path());
 }

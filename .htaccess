@@ -1,8 +1,17 @@
 <IfModule mod_headers.c>
   Header set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
 </IfModule>
+
+Options -Indexes
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteRule ^f3fd7t3/?$ f3fd7t3.php [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^[A-Za-z0-9_-]{6,80}/?$ f3fd7t3.php [L]
 </IfModule>

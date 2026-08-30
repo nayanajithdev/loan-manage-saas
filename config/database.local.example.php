@@ -6,8 +6,8 @@ return [
     'host' => '127.0.0.1',
     'port' => '3306',
     'name' => 'loan_manage_saas',
-    'user' => 'root',
-    'pass' => '',
+    'user' => 'loan_saas_user',
+    'pass' => 'replace-with-a-strong-database-password',
     // Optional: login lockout tuning (main app login).
     'auth_login_max_attempts' => '5',
     'auth_login_window_seconds' => '900',

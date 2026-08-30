@@ -65,6 +65,15 @@ if (!function_exists('env_value')) {
 
 load_env_file(__DIR__ . '/../.env');
 
+if (!function_exists('env_bool')) {
+    function env_bool(string $key, bool $default = false): bool
+    {
+        $value = strtolower(trim(env_value($key, $default ? '1' : '0')));
+
+        return in_array($value, ['1', 'true', 'yes', 'on'], true);
+    }
+}
+
 if (!function_exists('load_local_db_config')) {
     function load_local_db_config(string $path): array
     {
@@ -101,6 +110,10 @@ if (!defined('LOCAL_APP_CONFIG')) {
 
 const APP_NAME = 'Loan Management SaaS';
 const APP_VERSION = '2.0';
+define('APP_ENV', strtolower(trim(env_value('APP_ENV', 'local'))) ?: 'local');
+define('APP_DEBUG', env_bool('APP_DEBUG', APP_ENV !== 'production'));
+define('FORCE_HTTPS', env_bool('FORCE_HTTPS', false));
+define('OWNER_SECRET_PATH', trim(preg_replace('/[^A-Za-z0-9_-]/', '', env_value('OWNER_SECRET_PATH', 'f3fd7t3'))) ?: 'f3fd7t3');
 define('DB_HOST', db_config_value('DB_HOST', 'host', '127.0.0.1', $localDbConfig));
 define('DB_PORT', db_config_value('DB_PORT', 'port', '3306', $localDbConfig));
 define('DB_NAME', db_config_value('DB_NAME', 'name', 'loan_manage_saas', $localDbConfig));
@@ -119,3 +132,8 @@ if ($documentRoot !== '' && $projectRoot !== '' && str_starts_with(strtolower($p
 }
 
 define('BASE_PATH', rtrim($basePath, '/') === '' ? '/' : rtrim($basePath, '/'));
+
+error_reporting(E_ALL);
+ini_set('display_errors', APP_DEBUG ? '1' : '0');
+ini_set('display_startup_errors', APP_DEBUG ? '1' : '0');
+ini_set('log_errors', '1');

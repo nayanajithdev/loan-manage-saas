@@ -5,14 +5,14 @@ declare(strict_types=1);
 require_once __DIR__ . '/../includes/bootstrap.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    redirect('f3fd7t3.php');
+    redirect(owner_secret_login_path());
 }
-require_csrf('f3fd7t3.php');
+require_csrf(owner_secret_login_path());
 
 if (has_superadmin($pdo)) {
     log_activity($pdo, 'auth.owner_setup_blocked', 'SaaS admin setup blocked because SaaS admin already exists.');
     set_flash('error', 'SaaS Admin already exists.');
-    redirect('f3fd7t3.php');
+    redirect(owner_secret_login_path());
 }
 
 $fullName = trim((string) ($_POST['full_name'] ?? ''));
@@ -23,36 +23,36 @@ $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
 
 if ($fullName === '' || $username === '' || $email === '' || $password === '') {
     set_flash('error', 'All fields are required.');
-    redirect('f3fd7t3.php');
+    redirect(owner_secret_login_path());
 }
 
 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
     set_flash('error', 'Please enter a valid email.');
-    redirect('f3fd7t3.php');
+    redirect(owner_secret_login_path());
 }
 
 if ($password !== $confirmPassword) {
     set_flash('error', 'Passwords do not match.');
-    redirect('f3fd7t3.php');
+    redirect(owner_secret_login_path());
 }
 
 if (strlen($password) < 6) {
     set_flash('error', 'Password must be at least 6 characters.');
-    redirect('f3fd7t3.php');
+    redirect(owner_secret_login_path());
 }
 
 $existingStmt = $pdo->prepare('SELECT id FROM users WHERE username = :username LIMIT 1');
 $existingStmt->execute(['username' => $username]);
 if ($existingStmt->fetch()) {
     set_flash('error', 'Username already in use.');
-    redirect('f3fd7t3.php');
+    redirect(owner_secret_login_path());
 }
 
 $emailStmt = $pdo->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
 $emailStmt->execute(['email' => $email]);
 if ($emailStmt->fetch()) {
     set_flash('error', 'Email already in use.');
-    redirect('f3fd7t3.php');
+    redirect(owner_secret_login_path());
 }
 
 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
@@ -76,7 +76,7 @@ $newUser = $userStmt->fetch();
 
 if (!$newUser) {
     set_flash('error', 'Could not create owner.');
-    redirect('f3fd7t3.php');
+    redirect(owner_secret_login_path());
 }
 
 login_user($newUser);

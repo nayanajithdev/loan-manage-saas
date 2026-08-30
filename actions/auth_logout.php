@@ -10,7 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 require_csrf('index.php');
 
 $current = current_user();
-$redirectAfterLogout = is_owner($current) ? 'f3fd7t3.php' : 'login.php';
+$redirectAfterLogout = is_owner($current) ? owner_secret_login_path() : 'login.php';
 if ($current) {
     log_activity($pdo, 'auth.logout', 'User logged out.', [
         'username' => (string) ($current['username'] ?? ''),

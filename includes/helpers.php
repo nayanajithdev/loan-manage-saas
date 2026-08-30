@@ -13,6 +13,56 @@ function url(string $path = ''): string
     return rtrim(BASE_PATH, '/') . '/' . $path;
 }
 
+function owner_secret_login_path(): string
+{
+    return OWNER_SECRET_PATH;
+}
+
+function request_is_https(): bool
+{
+    if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+        return true;
+    }
+
+    $forwardedProto = strtolower(trim((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')));
+    if ($forwardedProto === 'https') {
+        return true;
+    }
+
+    return (string) ($_SERVER['SERVER_PORT'] ?? '') === '443';
+}
+
+function enforce_https_if_required(): void
+{
+    if (!FORCE_HTTPS || PHP_SAPI === 'cli' || request_is_https()) {
+        return;
+    }
+
+    $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+    if ($host === '') {
+        return;
+    }
+
+    $requestUri = (string) ($_SERVER['REQUEST_URI'] ?? '/');
+    header('Location: https://' . $host . $requestUri, true, 301);
+    exit;
+}
+
+function current_request_app_path(): string
+{
+    $requestPath = (string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
+    $requestPath = trim(str_replace('\\', '/', $requestPath), '/');
+    $basePath = trim(str_replace('\\', '/', (string) BASE_PATH), '/');
+
+    if ($basePath !== '' && str_starts_with($requestPath, $basePath . '/')) {
+        $requestPath = substr($requestPath, strlen($basePath) + 1);
+    } elseif ($basePath !== '' && $requestPath === $basePath) {
+        $requestPath = '';
+    }
+
+    return trim($requestPath, '/');
+}
+
 function absolute_url(string $path = ''): string
 {
     $configured = trim(env_value('APP_URL', ''));
@@ -422,7 +472,7 @@ function app_cookie_path(): string
 
 function app_cookie_secure(): bool
 {
-    return !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+    return FORCE_HTTPS || request_is_https();
 }
 
 function redirect(string $path): void
