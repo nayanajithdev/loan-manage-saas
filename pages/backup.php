@@ -3,9 +3,10 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/bootstrap.php';
+require_platform_owner();
 require_permission('backup.manage');
 
-$pageTitle = 'Backup / Restore';
+$pageTitle = 'System Backup / Restore';
 $activePage = 'backup';
 
 $tableRows = $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_NUM);
@@ -19,15 +20,15 @@ require __DIR__ . '/../includes/layout_start.php';
     <article class="backup-section">
         <div class="backup-section-head">
             <div>
-                <p class="backup-kicker">Database Backup</p>
-                <h2 class="panel-title">Download current backup</h2>
+                <p class="backup-kicker">Full System Backup</p>
+                <h2 class="panel-title">Download current system backup</h2>
             </div>
             <span class="backup-badge"><?= e((string) $tableCount) ?> tables</span>
         </div>
 
         <div class="backup-note">
             <h3>What this download contains</h3>
-            <p>SQL backup includes current database structure and saved records.</p>
+            <p>SQL backup includes current database structure and saved records for all tenants.</p>
             <p class="backup-table-list"><?= e(implode(', ', $tableNames)) ?></p>
         </div>
 
@@ -43,12 +44,12 @@ require __DIR__ . '/../includes/layout_start.php';
                 <p class="backup-kicker">Recovery</p>
                 <h2 class="panel-title">Upload and restore backup</h2>
             </div>
-            <span class="backup-badge">Backup permission required</span>
+            <span class="backup-badge">SaaS Admin only</span>
         </div>
 
         <div class="backup-note backup-warning">
             <h3>Warning</h3>
-            <p>Restoring a backup will replace current database structure and data. Download a fresh backup first if needed.</p>
+            <p>Restoring a backup will replace current database structure and data for the full system. Download a fresh backup first if needed.</p>
         </div>
 
         <form method="post" action="<?= e(url('actions/backup_restore.php')) ?>" enctype="multipart/form-data" class="form-grid backup-form">

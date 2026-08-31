@@ -31,6 +31,7 @@ $menuItems = [];
 
 if (is_owner($authUser)) {
     $menuItems[] = ['key' => 'tenants', 'label' => 'Tenants', 'path' => 'pages/tenants.php'];
+    $menuItems[] = ['key' => 'backup', 'label' => 'Backup / Restore', 'path' => 'pages/backup.php'];
 } elseif (can('dashboard.view')) {
     $menuItems[] = ['key' => 'dashboard', 'label' => 'Dashboard', 'path' => 'index.php'];
 }

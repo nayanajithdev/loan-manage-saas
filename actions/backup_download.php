@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/bootstrap.php';
+require_platform_owner();
 require_permission('backup.manage');
 
 @set_time_limit(0);
@@ -13,7 +14,7 @@ function build_sql_dump(PDO $pdo): array
     $tables = array_map(static fn(array $row): string => (string) $row[0], $tablesRaw);
 
     $dump = [];
-    $dump[] = '-- Loan Manager Database Backup';
+    $dump[] = '-- Loan Management SaaS Full Database Backup';
     $dump[] = '-- Generated at: ' . date('Y-m-d H:i:s');
     $dump[] = '-- Database: ' . DB_NAME;
     $dump[] = '';
