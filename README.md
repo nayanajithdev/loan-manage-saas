@@ -11,7 +11,8 @@ PHP + MySQL multi-tenant loan management system for small lending businesses.
 - Auto-refresh (AJAX polling) for key dashboard/collection sections
 - Multi-user login with roles:
   - `superadmin` (SaaS Admin)
-  - `admin` (Tenant Owner)
+  - `owner` (Business Owner - one per business)
+  - `manager` (Business Manager)
   - `collector` (Collector)
 - SaaS Admin tenant approval dashboard
 - Tenant registration with pending approval flow

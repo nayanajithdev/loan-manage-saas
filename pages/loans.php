@@ -20,8 +20,11 @@ if (!in_array($status, $allowedStatuses, true)) {
 
 $search = trim((string) ($_GET['q'] ?? ''));
 $search = mb_substr($search, 0, 120);
-$assignedUserId = max(0, (int) ($_GET['assigned_user_id'] ?? 0));
-$assignedUsers = assignable_collector_rows($pdo, $assignedUserId > 0 ? $assignedUserId : null);
+$routeId = max(0, (int) ($_GET['route_id'] ?? 0));
+if ($routeId > 0 && !route_exists($pdo, $routeId)) {
+    $routeId = 0;
+}
+$routeOptions = route_options($pdo);
 
 $loanStatusCounts = array_fill_keys($allowedStatuses, 0);
 $statusCountStmt = $pdo->prepare("SELECT status, COUNT(*) AS loan_count FROM loans WHERE status IN ('active', 'closed') AND " . tenant_scope_sql() . " GROUP BY status");
@@ -36,13 +39,13 @@ $formatLoanStatusOption = static function (string $label, int $count): string {
     return $label . ' - ' . str_pad((string) $count, 2, '0', STR_PAD_LEFT);
 };
 
-$sql = "SELECT l.*, c.full_name, l.assigned_user_id, u.full_name AS assigned_user_name, u.username AS assigned_username, u.role AS assigned_role,
+$sql = "SELECT l.*, c.full_name, COALESCE(r.name, 'No route') AS route_name,
             COALESCE((SELECT SUM(li.due_amount - li.paid_amount) FROM loan_installments li WHERE li.loan_id = l.id AND li.status IN ('pending', 'partial', 'overdue')), 0) AS outstanding_amount,
             COALESCE((SELECT COUNT(*) FROM loan_installments li WHERE li.loan_id = l.id AND li.status IN ('pending', 'partial', 'overdue')), 0) AS remaining_installment_count,
             (SELECT MAX(co.collected_on) FROM collections co WHERE co.loan_id = l.id) AS closed_on
         FROM loans l
         JOIN customers c ON c.id = l.customer_id
-        LEFT JOIN users u ON u.id = l.assigned_user_id
+        LEFT JOIN routes r ON r.id = l.route_id AND r.tenant_id = l.tenant_id
         WHERE l.status = :status
           AND " . tenant_scope_sql('l') . "";
 
@@ -54,9 +57,9 @@ if ($search !== '') {
     $params['search_name'] = $searchLike;
     $params['search_nic'] = $searchLike;
 }
-if ($assignedUserId > 0) {
-    $sql .= ' AND l.assigned_user_id = :assigned_user_id';
-    $params['assigned_user_id'] = $assignedUserId;
+if ($routeId > 0) {
+    $sql .= ' AND l.route_id = :route_id';
+    $params['route_id'] = $routeId;
 }
 
 $sql .= ' ORDER BY l.id DESC';
@@ -65,37 +68,12 @@ $stmt->execute($params);
 $loans = $stmt->fetchAll();
 $canCreateLoan = can('loans.create');
 
-$renderAssignedHeader = static function (array $assignedUsers, int $assignedUserId): string {
-    ob_start(); ?>
-    <div class="table-header-filter" data-table-filter-menu>
-        <button type="button" class="table-header-filter-toggle <?= $assignedUserId > 0 ? 'is-active' : '' ?>" data-table-filter-toggle aria-expanded="false">
-            <span>Assigned To</span>
-            <span class="table-header-filter-chevron" aria-hidden="true">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down-icon lucide-chevron-down"><path d="m6 9 6 6 6-6"/></svg>
-            </span>
-        </button>
-        <div class="table-header-filter-menu" data-table-filter-options hidden>
-            <button type="button" data-assigned-filter-value="0" class="<?= $assignedUserId === 0 ? 'is-selected' : '' ?>">All Assigned Users</button>
-            <?php foreach ($assignedUsers as $assignedUser): ?>
-                <?php
-                $userId = (int) ($assignedUser['id'] ?? 0);
-                $label = trim((string) ($assignedUser['full_name'] ?? ''));
-                if ($label === '') {
-                    $label = (string) ($assignedUser['username'] ?? ('User #' . $userId));
-                }
-                ?>
-                <button type="button" data-assigned-filter-value="<?= e((string) $userId) ?>" class="<?= $assignedUserId === $userId ? 'is-selected' : '' ?>"><?= e($label) ?></button>
-            <?php endforeach; ?>
-        </div>
-    </div>
-    <?php return (string) ob_get_clean();
-};
-
-$renderLoansHead = static function (string $status, array $assignedUsers, int $assignedUserId) use ($renderAssignedHeader): string {
+$renderLoansHead = static function (string $status): string {
     ob_start(); ?>
     <tr>
         <th>Loan No</th>
         <th>Customer</th>
+        <th>Route</th>
         <th>Principal</th>
         <th>Total</th>
         <th>Collected</th>
@@ -104,14 +82,13 @@ $renderLoansHead = static function (string $status, array $assignedUsers, int $a
         <?php else: ?>
             <th>Balance</th>
             <th>Inst. Left</th>
-            <th><?= $renderAssignedHeader($assignedUsers, $assignedUserId) ?></th>
         <?php endif; ?>
     </tr>
     <?php return (string) ob_get_clean();
 };
 
 $renderLoansBody = static function (array $loans, PDO $pdo, string $status): string {
-    $columnCount = $status === 'closed' ? 6 : 8;
+    $columnCount = $status === 'closed' ? 7 : 8;
     ob_start();
     if (!$loans): ?>
         <tr><td colspan="<?= e((string) $columnCount) ?>">No loans yet.</td></tr>
@@ -125,6 +102,7 @@ $renderLoansBody = static function (array $loans, PDO $pdo, string $status): str
             <tr class="table-row-clickable" data-select-url="<?= e($selectUrl) ?>">
                 <td><?= e($loan['loan_number']) ?></td>
                 <td><?= e($loan['full_name']) ?></td>
+                <td><?= e((string) ($loan['route_name'] ?? 'No route')) ?></td>
                 <td><?= e(money_label($pdo, (float) $loan['principal_amount'])) ?></td>
                 <td><?= e(money_label($pdo, (float) $loan['total_amount'])) ?></td>
                 <td><?= e(money_label($pdo, $collectedAmount)) ?></td>
@@ -137,15 +115,6 @@ $renderLoansBody = static function (array $loans, PDO $pdo, string $status): str
                             <span class="badge badge-success">Completed</span>
                         <?php else: ?>
                             <?= e((string) $remainingInstallments) ?> left (<?= e((string) $loan['installment_frequency']) ?>)
-                        <?php endif; ?>
-                    </td>
-                <?php endif; ?>
-                <?php if ($status !== 'closed'): ?>
-                    <td>
-                        <?php if (!empty($loan['assigned_user_name'])): ?>
-                            <?= e($loan['assigned_user_name']) ?>
-                        <?php else: ?>
-                            <span class="badge badge-info">All users</span>
                         <?php endif; ?>
                     </td>
                 <?php endif; ?>
@@ -173,6 +142,10 @@ $renderLoansCards = static function (array $loans, PDO $pdo, string $status): st
                     <strong class="loan-mobile-customer"><?= e((string) $loan['full_name']) ?></strong>
                 </div>
                 <div class="loan-mobile-card-body">
+                    <div class="loan-mobile-metric">
+                        <span>Route</span>
+                        <strong><?= e((string) ($loan['route_name'] ?? 'No route')) ?></strong>
+                    </div>
                     <div class="loan-mobile-metric">
                         <span>Principal</span>
                         <strong><?= e(money_label($pdo, (float) $loan['principal_amount'])) ?></strong>
@@ -212,7 +185,7 @@ if ($isAjax) {
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode([
         'targets' => [
-            '#loans-table-head' => $renderLoansHead($status, $assignedUsers, $assignedUserId),
+            '#loans-table-head' => $renderLoansHead($status),
             '#loans-table-body' => $renderLoansBody($loans, $pdo, $status),
             '#loans-mobile-cards' => $renderLoansCards($loans, $pdo, $status),
         ],
@@ -224,7 +197,7 @@ require __DIR__ . '/../includes/layout_start.php';
 ?>
 
 <div class="loans-page-toolbar">
-    <form id="loan-filter-form" class="loan-filter-form" method="get">
+    <form id="loan-filter-form" class="loan-filter-form" method="get" action="<?= e(url('pages/loans.php')) ?>">
         <div class="field loan-status-field">
             <label class="sr-only">Status</label>
             <select name="status" id="loan-status-filter" class="loan-status-select is-<?= e($status) ?>">
@@ -232,7 +205,16 @@ require __DIR__ . '/../includes/layout_start.php';
                 <option value="closed" <?= $status === 'closed' ? 'selected' : '' ?>><?= e($formatLoanStatusOption('Closed Loans', $loanStatusCounts['closed'])) ?></option>
             </select>
         </div>
-        <input type="hidden" name="assigned_user_id" id="loan-assigned-filter" value="<?= e((string) $assignedUserId) ?>">
+        <div class="field loan-route-field">
+            <label class="sr-only">Route</label>
+            <select name="route_id" id="loan-route-filter" class="loan-route-select">
+                <option value="0" <?= $routeId === 0 ? 'selected' : '' ?>>All routes</option>
+                <?php foreach ($routeOptions as $route): ?>
+                    <?php $optionRouteId = (int) ($route['id'] ?? 0); ?>
+                    <option value="<?= e((string) $optionRouteId) ?>" <?= $routeId === $optionRouteId ? 'selected' : '' ?>><?= e((string) $route['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
         <div class="field loan-search-field">
             <label class="sr-only">Search loans</label>
             <div class="search-control">
@@ -263,7 +245,6 @@ require __DIR__ . '/../includes/layout_start.php';
 
 <div class="loans-mobile-toolbar">
     <form class="loan-mobile-filter-form" method="get" action="<?= e(url('pages/loans.php')) ?>">
-        <input type="hidden" name="assigned_user_id" value="<?= e((string) $assignedUserId) ?>">
         <div class="loan-mobile-toolbar-row loan-mobile-toolbar-primary">
             <?php if ($canCreateLoan): ?>
                 <a class="btn btn-primary loan-create-action" href="<?= e(url('pages/loan_create.php')) ?>">
@@ -275,13 +256,23 @@ require __DIR__ . '/../includes/layout_start.php';
             <?php endif; ?>
             <div class="field loan-mobile-status-field">
                 <label class="sr-only">Status</label>
-                <select name="status" class="loan-status-select is-<?= e($status) ?>" data-loan-mobile-status>
+                <select name="status" class="loan-status-select is-<?= e($status) ?>" data-loan-mobile-filter>
                     <option value="active" <?= $status === 'active' ? 'selected' : '' ?>><?= e($formatLoanStatusOption('Active Loans', $loanStatusCounts['active'])) ?></option>
                     <option value="closed" <?= $status === 'closed' ? 'selected' : '' ?>><?= e($formatLoanStatusOption('Closed Loans', $loanStatusCounts['closed'])) ?></option>
                 </select>
             </div>
         </div>
         <div class="loan-mobile-toolbar-row loan-mobile-toolbar-secondary">
+            <div class="field loan-mobile-route-field">
+                <label class="sr-only">Route</label>
+                <select name="route_id" class="loan-route-select" data-loan-mobile-filter>
+                    <option value="0" <?= $routeId === 0 ? 'selected' : '' ?>>All routes</option>
+                    <?php foreach ($routeOptions as $route): ?>
+                        <?php $optionRouteId = (int) ($route['id'] ?? 0); ?>
+                        <option value="<?= e((string) $optionRouteId) ?>" <?= $routeId === $optionRouteId ? 'selected' : '' ?>><?= e((string) $route['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
             <div class="field loan-mobile-search-field">
                 <label class="sr-only">Search loans</label>
                 <div class="search-control">
@@ -305,7 +296,7 @@ require __DIR__ . '/../includes/layout_start.php';
     <div class="table-wrap">
         <table class="zebra-table loans-table loans-table-<?= e($status) ?>">
             <thead id="loans-table-head">
-            <?= $renderLoansHead($status, $assignedUsers, $assignedUserId) ?>
+            <?= $renderLoansHead($status) ?>
             </thead>
             <tbody id="loans-table-body">
             <?= $renderLoansBody($loans, $pdo, $status) ?>
@@ -319,19 +310,19 @@ require __DIR__ . '/../includes/layout_start.php';
 
 <script>
 (() => {
-  document.querySelectorAll('[data-loan-mobile-status]').forEach((mobileStatus) => {
-    mobileStatus.addEventListener('change', () => {
-      if (mobileStatus.form instanceof HTMLFormElement) {
-        mobileStatus.form.submit();
+  document.querySelectorAll('[data-loan-mobile-filter]').forEach((mobileFilter) => {
+    mobileFilter.addEventListener('change', () => {
+      if (mobileFilter.form instanceof HTMLFormElement) {
+        mobileFilter.form.submit();
       }
     });
   });
 
   const form = document.getElementById('loan-filter-form');
   const status = document.getElementById('loan-status-filter');
-  const assigned = document.getElementById('loan-assigned-filter');
+  const route = document.getElementById('loan-route-filter');
   const tbody = document.getElementById('loans-table-body');
-  if (!form || !status || !assigned || !tbody) return;
+  if (!form || !status || !route || !tbody) return;
 
   const syncLoanTableStatusClass = () => {
     const loansTable = tbody.closest('table');
@@ -357,7 +348,6 @@ require __DIR__ . '/../includes/layout_start.php';
         const tableHead = document.getElementById('loans-table-head');
         if (tableHead && data.targets['#loans-table-head'] !== undefined) {
           tableHead.innerHTML = String(data.targets['#loans-table-head']);
-          bindFilterMenus();
         }
         tbody.innerHTML = String(data.targets['#loans-table-body']);
         const mobileCards = document.getElementById('loans-mobile-cards');
@@ -378,54 +368,8 @@ require __DIR__ . '/../includes/layout_start.php';
     syncLoanTableStatusClass();
     loadRows();
   });
-  const bindFilterMenus = () => {
-    const menus = Array.from(document.querySelectorAll('[data-table-filter-menu]'));
-    menus.forEach((menu) => {
-      const toggle = menu.querySelector('[data-table-filter-toggle]');
-      const options = menu.querySelector('[data-table-filter-options]');
-      if (!(toggle instanceof HTMLButtonElement) || !(options instanceof HTMLElement)) return;
-      if (menu.dataset.boundTableFilter === '1') return;
-      menu.dataset.boundTableFilter = '1';
 
-      toggle.addEventListener('click', (event) => {
-        event.stopPropagation();
-        const willOpen = options.hidden;
-        Array.from(document.querySelectorAll('[data-table-filter-menu]')).forEach((otherMenu) => {
-          const otherOptions = otherMenu.querySelector('[data-table-filter-options]');
-          const otherToggle = otherMenu.querySelector('[data-table-filter-toggle]');
-          if (otherOptions instanceof HTMLElement) otherOptions.hidden = true;
-          if (otherToggle instanceof HTMLElement) otherToggle.setAttribute('aria-expanded', 'false');
-        });
-        options.hidden = !willOpen;
-        toggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
-      });
-
-      options.querySelectorAll('[data-assigned-filter-value]').forEach((option) => {
-        option.addEventListener('click', () => {
-          const selectedValue = option.getAttribute('data-assigned-filter-value') || '0';
-          assigned.value = selectedValue;
-          options.querySelectorAll('[data-assigned-filter-value]').forEach((item) => {
-            item.classList.toggle('is-selected', item === option);
-          });
-          toggle.classList.toggle('is-active', selectedValue !== '0');
-          options.hidden = true;
-          toggle.setAttribute('aria-expanded', 'false');
-          loadRows();
-        });
-      });
-    });
-  };
-
-  bindFilterMenus();
-
-  document.addEventListener('click', () => {
-    Array.from(document.querySelectorAll('[data-table-filter-menu]')).forEach((menu) => {
-      const options = menu.querySelector('[data-table-filter-options]');
-      const toggle = menu.querySelector('[data-table-filter-toggle]');
-      if (options instanceof HTMLElement) options.hidden = true;
-      if (toggle instanceof HTMLElement) toggle.setAttribute('aria-expanded', 'false');
-    });
-  });
+  route.addEventListener('change', loadRows);
 })();
 </script>
 

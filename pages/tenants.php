@@ -37,105 +37,30 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $tenants = $stmt->fetchAll();
 
-$summary = [
-    'pending' => 0,
-    'approved' => 0,
-    'suspended' => 0,
-    'rejected' => 0,
-    'deleted' => 0,
-];
-$summaryStmt = $pdo->query("SELECT status, COUNT(*) AS tenant_count FROM tenants GROUP BY status");
-foreach ($summaryStmt->fetchAll() as $row) {
-    $status = (string) ($row['status'] ?? '');
-    if (array_key_exists($status, $summary)) {
-        $summary[$status] = (int) $row['tenant_count'];
-    }
-}
-
 require __DIR__ . '/../includes/layout_start.php';
 ?>
 
-<section class="card-grid dashboard-stat-grid">
-    <article class="stat-card">
-        <p class="stat-label">Pending Approval</p>
-        <p class="stat-value"><?= e((string) $summary['pending']) ?></p>
-    </article>
-    <article class="stat-card">
-        <p class="stat-label">Approved Tenants</p>
-        <p class="stat-value"><?= e((string) $summary['approved']) ?></p>
-    </article>
-    <article class="stat-card">
-        <p class="stat-label">Suspended</p>
-        <p class="stat-value"><?= e((string) $summary['suspended']) ?></p>
-    </article>
-</section>
-
-<section class="dashboard-two-col">
-    <article class="panel">
-        <div class="panel-head">
-            <h2 class="panel-title">Create Tenant</h2>
+<div class="tenants-list-head tenants-list-toolbar">
+    <form method="get" action="<?= e(url('pages/tenants.php')) ?>" class="tenant-filter-form tenant-filter-form-inline">
+        <div class="field full">
+            <select id="tenant-status-filter" name="status" onchange="this.form.submit()">
+                <option value="" <?= $statusFilter === '' ? 'selected' : '' ?>>All tenants</option>
+                <?php foreach ($validStatuses as $status): ?>
+                    <option value="<?= e($status) ?>" <?= $statusFilter === $status ? 'selected' : '' ?>><?= e(ucfirst($status)) ?></option>
+                <?php endforeach; ?>
+            </select>
         </div>
-        <form method="post" action="<?= e(url('actions/tenant_save.php')) ?>" class="form-grid tenant-create-form">
-            <?= csrf_input() ?>
-            <div class="form-field">
-                <label for="tenant-name">Business Name</label>
-                <input id="tenant-name" type="text" name="name" maxlength="150" required>
-            </div>
-            <div class="form-field">
-                <label for="tenant-slug">Slug</label>
-                <input id="tenant-slug" type="text" name="slug" maxlength="80" placeholder="auto-created if blank">
-            </div>
-            <div class="form-field">
-                <label for="tenant-owner-name">Owner Name</label>
-                <input id="tenant-owner-name" type="text" name="owner_name" maxlength="150" required>
-            </div>
-            <div class="form-field">
-                <label for="tenant-owner-email">Owner Email</label>
-                <input id="tenant-owner-email" type="email" name="owner_email" maxlength="190" required>
-            </div>
-            <div class="form-field">
-                <label for="tenant-phone">Phone</label>
-                <input id="tenant-phone" type="text" name="phone" maxlength="40">
-            </div>
-            <div class="form-field">
-                <label for="tenant-username">Admin Username</label>
-                <input id="tenant-username" type="text" name="username" maxlength="80" required>
-            </div>
-            <div class="form-field">
-                <label for="tenant-password">Admin Password</label>
-                <input id="tenant-password" type="password" name="password" minlength="6" required>
-            </div>
-            <div class="form-field">
-                <label for="tenant-status">Initial Status</label>
-                <select id="tenant-status" name="status">
-                    <option value="pending">Pending</option>
-                    <option value="approved">Approved</option>
-                </select>
-            </div>
-            <div class="form-field form-field-full">
-                <label for="tenant-notes">Notes</label>
-                <textarea id="tenant-notes" name="notes" rows="3"></textarea>
-            </div>
-            <div class="form-actions">
-                <button class="btn btn-primary" type="submit">Create Tenant</button>
-            </div>
-        </form>
-    </article>
-
-    <article class="panel">
-        <div class="panel-head">
-            <h2 class="panel-title">Filter</h2>
-        </div>
-        <div class="filter-pills">
-            <a class="btn <?= $statusFilter === '' ? 'btn-primary' : '' ?>" href="<?= e(url('pages/tenants.php')) ?>">All</a>
-            <?php foreach ($validStatuses as $status): ?>
-                <a class="btn <?= $statusFilter === $status ? 'btn-primary' : '' ?>" href="<?= e(url('pages/tenants.php?status=' . $status)) ?>">
-                    <?= e(ucfirst($status)) ?>
-                </a>
-            <?php endforeach; ?>
-        </div>
-    </article>
-</section>
+        <noscript>
+            <button class="btn btn-primary" type="submit">Apply Filter</button>
+        </noscript>
+    </form>
+    <a class="btn btn-primary" href="<?= e(url('pages/tenant_create.php')) ?>">
+        <span class="btn-icon-inline" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        </span>
+        Create Tenant
+    </a>
+</div>
 
 <section class="panel users-directory-panel">
     <div class="table-wrap">

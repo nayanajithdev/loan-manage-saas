@@ -3,7 +3,11 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/bootstrap.php';
+if (is_owner()) {
+    redirect('pages/tenants.php');
+}
 require_permission('system_settings.manage', 'pages/system_settings.php');
+require_tenant_context('pages/system_settings.php');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect('pages/system_settings.php');
@@ -20,7 +24,6 @@ $defaultInterestRateMonths = normalize_interest_rate_months((int) ($_POST['defau
 $defaultFrequency = (string) ($_POST['default_installment_frequency'] ?? 'daily');
 $defaultTimeframeValue = max(1, (int) ($_POST['default_timeframe_value'] ?? 30));
 $defaultTimeframeUnit = (string) ($_POST['default_timeframe_unit'] ?? 'days');
-$defaultLoanCollectorId = (int) ($_POST['default_loan_collector_id'] ?? 0);
 $allowOverpayment = (string) ($_POST['allow_overpayment'] ?? '1') === '0' ? '0' : '1';
 $autoFillAmountReceived = (string) ($_POST['auto_fill_amount_received'] ?? '1') === '0' ? '0' : '1';
 $paymentMethodSelectionEnabled = (string) ($_POST['payment_method_selection_enabled'] ?? '1') === '0' ? '0' : '1';
@@ -34,9 +37,6 @@ if (!in_array($defaultTimeframeUnit, ['days', 'months'], true)) {
     $defaultTimeframeUnit = 'days';
 }
 
-if ($defaultLoanCollectorId > 0 && !is_assignable_collector($pdo, $defaultLoanCollectorId)) {
-    $defaultLoanCollectorId = default_loan_collector_id($pdo);
-}
 
 $settingsToSave = [
     'currency_label' => mb_substr($currencyLabel !== '' ? $currencyLabel : 'LKR', 0, 12),
@@ -49,7 +49,6 @@ $settingsToSave = [
     'default_installment_frequency' => $defaultFrequency,
     'default_timeframe_value' => (string) $defaultTimeframeValue,
     'default_timeframe_unit' => $defaultTimeframeUnit,
-    'default_loan_collector_id' => (string) $defaultLoanCollectorId,
     'allow_overpayment' => $allowOverpayment,
     'auto_fill_amount_received' => $autoFillAmountReceived,
     'payment_method_selection_enabled' => $paymentMethodSelectionEnabled,

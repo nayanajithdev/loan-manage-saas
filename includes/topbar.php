@@ -79,7 +79,7 @@ $topbarBusinessName = system_setting($pdo, 'business_name', 'Loan Manager');
                     </span>
                     <span class="user-menu-meta">
                         <strong><?= e($authUser['full_name']) ?></strong>
-                        <small><?= e(role_display_name((string) $authUser['role'])) ?></small>
+                        <small><?= e(user_role_display_name($authUser, $pdo)) ?></small>
                     </span>
                     <span class="user-menu-chevron" aria-hidden="true">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

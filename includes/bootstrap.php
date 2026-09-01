@@ -24,6 +24,7 @@ try {
     ensure_multi_tenant_schema($pdo);
     ensure_user_schema($pdo);
     ensure_user_permissions_schema($pdo);
+    ensure_one_owner_per_tenant_schema($pdo);
     ensure_user_email_schema($pdo);
     ensure_user_profile_schema($pdo);
     ensure_user_status_schema($pdo);
@@ -36,6 +37,7 @@ try {
     ensure_collection_payment_ref_schema($pdo);
     ensure_flexible_collection_schema($pdo);
     repair_loan_installment_counts_from_history($pdo);
+    ensure_routes_schema($pdo);
     ensure_loan_assignment_schema($pdo);
     ensure_loan_issued_date_schema($pdo);
     ensure_loan_end_date_schema($pdo);

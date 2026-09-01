@@ -12,8 +12,6 @@ require_tenant_context();
 $pageTitle = 'Customers';
 $activePage = 'customers';
 
-$current = current_user();
-$currentUserId = (int) ($current['id'] ?? 0);
 $canCreateCustomer = can('customers.create');
 $searchTerm = trim((string) ($_GET['q'] ?? ''));
 $searchTerm = mb_substr($searchTerm, 0, 120);
@@ -23,71 +21,30 @@ $searchClause = " AND (
     OR c.nic LIKE :search_nic ESCAPE '\\\\'
 )";
 
-if (can_view_all_customers()) {
-    $sql =
-        "SELECT
-            c.*,
-            COALESCE((
-                SELECT SUM(l.principal_amount)
-                FROM loans l
-                WHERE l.customer_id = c.id
-                  AND l.status = 'active'
-            ), 0) AS running_principal,
-            COALESCE((
-                SELECT COUNT(*)
-                FROM loan_installments li
-                JOIN loans lq ON lq.id = li.loan_id
-                WHERE lq.customer_id = c.id
-                  AND (
-                      (li.paid_on IS NOT NULL AND li.paid_on > li.due_date)
-                      OR (li.paid_on IS NULL AND li.due_date < CURDATE() AND li.status IN ('pending', 'partial', 'overdue'))
-                  )
-            ), 0) AS overdue_installment_count
-         FROM customers c
-         WHERE " . tenant_scope_sql('c') . ($searchTerm !== '' ? $searchClause : '') . "
-         ORDER BY c.id DESC";
-    $customerStmt = $pdo->prepare($sql);
-    $params = tenant_scope_params();
-} else {
-    $sql =
-        "SELECT
-            c.*,
-            COALESCE((
-                SELECT SUM(l2.principal_amount)
-                FROM loans l2
-                WHERE l2.customer_id = c.id
-                  AND l2.status = 'active'
-            ), 0) AS running_principal,
-            COALESCE((
-                SELECT COUNT(*)
-                FROM loan_installments li
-                JOIN loans lq ON lq.id = li.loan_id
-                WHERE lq.customer_id = c.id
-                  AND (
-                      (li.paid_on IS NOT NULL AND li.paid_on > li.due_date)
-                      OR (li.paid_on IS NULL AND li.due_date < CURDATE() AND li.status IN ('pending', 'partial', 'overdue'))
-                  )
-            ), 0) AS overdue_installment_count
-         FROM customers c
-         WHERE " . tenant_scope_sql('c') . "
-           AND (
-                EXISTS (
-                    SELECT 1
-                    FROM loans l_assigned
-                    WHERE l_assigned.customer_id = c.id
-                      AND " . collector_assignment_scope_sql('l_assigned', 'uid') . "
-                )
-                OR NOT EXISTS (
-                    SELECT 1
-                    FROM loans l_any
-                    WHERE l_any.customer_id = c.id
-                )
-         )" . ($searchTerm !== '' ? $searchClause : '') . "
-         ORDER BY c.id DESC";
-    $customerStmt = $pdo->prepare($sql);
-    $params = tenant_scope_params(['uid' => $currentUserId]);
-}
-
+$sql =
+    "SELECT
+        c.*,
+        COALESCE((
+            SELECT SUM(l.principal_amount)
+            FROM loans l
+            WHERE l.customer_id = c.id
+              AND l.status = 'active'
+        ), 0) AS running_principal,
+        COALESCE((
+            SELECT COUNT(*)
+            FROM loan_installments li
+            JOIN loans lq ON lq.id = li.loan_id
+            WHERE lq.customer_id = c.id
+              AND (
+                  (li.paid_on IS NOT NULL AND li.paid_on > li.due_date)
+                  OR (li.paid_on IS NULL AND li.due_date < CURDATE() AND li.status IN ('pending', 'partial', 'overdue'))
+              )
+        ), 0) AS overdue_installment_count
+     FROM customers c
+     WHERE " . tenant_scope_sql('c') . ($searchTerm !== '' ? $searchClause : '') . "
+     ORDER BY c.id DESC";
+$customerStmt = $pdo->prepare($sql);
+$params = tenant_scope_params();
 if ($searchTerm !== '') {
     $searchValue = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $searchTerm) . '%';
     $params['search_name'] = $searchValue;

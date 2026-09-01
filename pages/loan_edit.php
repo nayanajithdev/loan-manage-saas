@@ -22,7 +22,6 @@ if ($loanId <= 0) {
 
 $loanStmt = $pdo->prepare(
     "SELECT l.*, c.full_name, c.nic AS customer_nic, c.phone AS customer_phone, c.address AS customer_address
-            , l.assigned_user_id AS loan_assigned_user_id
      FROM loans l
      JOIN customers c ON c.id = l.customer_id
      WHERE l.id = :id
@@ -37,15 +36,13 @@ if (!$loan) {
     redirect('pages/loans.php');
 }
 
-$currentAssignedUserId = (int) ($loan['loan_assigned_user_id'] ?? 0);
 
 $customerStmt = $pdo->prepare("SELECT id, customer_code, full_name, nic FROM customers WHERE status = 'active' AND " . tenant_scope_sql() . " ORDER BY full_name ASC");
 $customerStmt->execute(tenant_scope_params());
 $customers = $customerStmt->fetchAll();
-$users = assignable_collector_rows($pdo, $currentAssignedUserId > 0 ? $currentAssignedUserId : null);
+$routes = route_options($pdo);
 $current = current_user();
 $canEditLoan = can('loans.edit');
-$canEditAssignment = can('loans.assign');
 $canScheduleNextPayment = can('collections.schedule');
 $canDeleteLoan = can('loans.delete');
 $canViewCustomer = can('customers.view');
@@ -363,6 +360,15 @@ require __DIR__ . '/../includes/layout_start.php';
         </div>
 
         <div class="field">
+            <label>Route</label>
+            <select name="route_id" <?= $canEditLoan ? 'disabled data-loan-edit-controlled' : 'disabled' ?>>
+                <option value="0" <?= (int) ($loan['route_id'] ?? 0) <= 0 ? 'selected' : '' ?>>No route</option>
+                <?php foreach ($routes as $route): ?>
+                    <option value="<?= e((string) $route['id']) ?>" <?= (int) ($loan['route_id'] ?? 0) === (int) $route['id'] ? 'selected' : '' ?>><?= e((string) $route['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="field">
             <label>Principal Amount</label>
             <input type="number" step="0.01" name="principal_amount" value="<?= e((string) $loan['principal_amount']) ?>" required <?= $canEditLoan ? 'readonly data-loan-edit-controlled data-loan-edit-readonly' : 'readonly' ?>>
         </div>
@@ -416,20 +422,6 @@ require __DIR__ . '/../includes/layout_start.php';
             </select>
         </div>
 
-        <div class="field">
-            <label>Assign Loan To Collector</label>
-            <select name="assigned_user_id" <?= ($canEditLoan && $canEditAssignment) ? 'disabled data-loan-edit-controlled' : 'disabled' ?>>
-                <option value="0" <?= $currentAssignedUserId <= 0 ? 'selected' : '' ?>>All users</option>
-                <?php foreach ($users as $user): ?>
-                    <option value="<?= e((string) $user['id']) ?>" <?= $currentAssignedUserId === (int) $user['id'] ? 'selected' : '' ?>>
-                        <?= e($user['full_name'] . ' (' . $user['username'] . ' - ' . role_display_name((string) $user['role']) . ((string) ($user['status'] ?? 'active') !== 'active' ? ', inactive' : '') . ')') ?>
-                    </option>
-                <?php endforeach; ?>
-            </select>
-            <?php if (!$canEditAssignment): ?>
-                <input type="hidden" name="assigned_user_id" value="<?= e((string) $currentAssignedUserId) ?>">
-            <?php endif; ?>
-        </div>
 
         <?php if (($canScheduleNextPayment && $canEditLoan) || $canEditLoan): ?>
             <div class="loan-form-divider">Installment Options</div>

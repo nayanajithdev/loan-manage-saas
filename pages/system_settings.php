@@ -3,7 +3,11 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/bootstrap.php';
+if (is_owner()) {
+    redirect('pages/tenants.php');
+}
 require_permission('system_settings.view');
+require_tenant_context();
 
 $pageTitle = 'System Settings';
 $activePage = 'system_settings';
@@ -12,9 +16,6 @@ $disabledAttr = $canEditSystemSettings ? '' : ' disabled';
 
 $settings = system_settings_all($pdo);
 $get = static fn(string $key, string $default = ''): string => $settings[$key] ?? $default;
-$defaultLoanCollectorId = default_loan_collector_id($pdo);
-$loanDefaultCollectors = assignable_collector_rows($pdo, $defaultLoanCollectorId);
-$bulkLoanCollectors = assignable_collector_rows($pdo);
 
 require __DIR__ . '/../includes/layout_start.php';
 ?>
@@ -24,7 +25,6 @@ require __DIR__ . '/../includes/layout_start.php';
         <div class="loan-tab-nav" role="tablist" aria-label="System settings sections">
             <button type="button" id="system-settings-tab-system" class="loan-tab-button is-active" data-system-settings-tab-open="system" role="tab" aria-selected="true" aria-controls="system-settings-panel-system">System Settings</button>
             <button type="button" id="system-settings-tab-loan-defaults" class="loan-tab-button" data-system-settings-tab-open="loan-defaults" role="tab" aria-selected="false" aria-controls="system-settings-panel-loan-defaults">Loan Default Settings</button>
-            <button type="button" id="system-settings-tab-bulk-assignment" class="loan-tab-button" data-system-settings-tab-open="bulk-assignment" role="tab" aria-selected="false" aria-controls="system-settings-panel-bulk-assignment">Bulk Loan Assignment</button>
         </div>
 
         <section class="panel loan-edit-tabs system-settings-tabs-panel">
@@ -127,62 +127,14 @@ require __DIR__ . '/../includes/layout_start.php';
                                     <option value="monthly" <?= $freq === 'monthly' ? 'selected' : '' ?>>Monthly</option>
                                 </select>
                             </div>
-                            <div class="field">
-                                <label>Collector</label>
-                                <select name="default_loan_collector_id" required<?= $disabledAttr ?>>
-                                    <option value="0" <?= $defaultLoanCollectorId <= 0 ? 'selected' : '' ?>>All users</option>
-                                    <?php foreach ($loanDefaultCollectors as $collector): ?>
-                                        <?php
-                                        $collectorId = (int) ($collector['id'] ?? 0);
-                                        $collectorName = trim((string) ($collector['full_name'] ?? ''));
-                                        if ($collectorName === '') {
-                                            $collectorName = (string) ($collector['username'] ?? ('User #' . $collectorId));
-                                        }
-                                        ?>
-                                        <option value="<?= e((string) $collectorId) ?>" <?= $collectorId === $defaultLoanCollectorId ? 'selected' : '' ?>>
-                                            <?= e($collectorName . ' (' . role_display_name((string) ($collector['role'] ?? 'collector')) . ')') ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
                         </div>
                     </div>
                 </div>
             </form>
 
-            <div id="system-settings-panel-bulk-assignment" class="loan-tab-panel system-settings-tab-panel" data-system-settings-tab-panel="bulk-assignment" role="tabpanel" aria-labelledby="system-settings-tab-bulk-assignment" hidden>
-                <form class="bulk-loan-assignment-form" method="post" action="<?= e(url('actions/loan_bulk_assign.php')) ?>" data-confirm="Assign all loans to the selected collector? This will update every loan." data-inline-confirm="1" data-inline-confirm-label="Assign All">
-                    <?= csrf_input() ?>
-                    <div class="settings-col">
-                        <div class="form-grid settings-loan-default-grid">
-                            <div class="field">
-                                <label>Assign All Loans To Collector</label>
-                                <select name="assigned_user_id" required<?= $disabledAttr ?>>
-                                    <option value="0">All users</option>
-                                    <?php foreach ($bulkLoanCollectors as $collector): ?>
-                                        <?php
-                                        $collectorId = (int) ($collector['id'] ?? 0);
-                                        $collectorName = trim((string) ($collector['full_name'] ?? ''));
-                                        if ($collectorName === '') {
-                                            $collectorName = (string) ($collector['username'] ?? ('User #' . $collectorId));
-                                        }
-                                        ?>
-                                        <option value="<?= e((string) $collectorId) ?>">
-                                            <?= e($collectorName . ' (' . role_display_name((string) ($collector['role'] ?? 'collector')) . ')') ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-actions">
-                            <button type="submit" class="btn btn-primary customer-submit-btn"<?= $canEditSystemSettings ? '' : ' disabled' ?>>Assign All Loans</button>
-                        </div>
-                    </div>
-                </form>
-            </div>
         </section>
 
-        <div class="form-actions system-settings-page-actions" data-system-settings-save-action>
+        <div class="form-actions system-settings-page-actions">
             <button type="submit" form="system-settings-form" class="btn btn-primary customer-submit-btn"<?= $canEditSystemSettings ? '' : ' disabled' ?>>Save System Settings</button>
         </div>
     </div>
@@ -197,7 +149,6 @@ require __DIR__ . '/../includes/layout_start.php';
 
     const tabButtons = Array.from(tabRoot.querySelectorAll('[data-system-settings-tab-open]'));
     const panels = Array.from(tabRoot.querySelectorAll('[data-system-settings-tab-panel]'));
-    const saveAction = tabRoot.querySelector('[data-system-settings-save-action]');
     const validTabs = tabButtons.map((button) => button.getAttribute('data-system-settings-tab-open') || '');
 
     const openTab = (target, syncHash = true) => {
@@ -217,9 +168,6 @@ require __DIR__ . '/../includes/layout_start.php';
             button.setAttribute('aria-selected', isActive ? 'true' : 'false');
         });
 
-        if (saveAction) {
-            saveAction.hidden = target === 'bulk-assignment';
-        }
 
         if (syncHash && window.history && window.history.replaceState) {
             window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${target}`);

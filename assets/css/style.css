@@ -6769,3 +6769,168 @@ body.theme-light .permission-panel {
         grid-column: span 12;
     }
 }
+
+.tenant-filter-form {
+    display: grid;
+    gap: 12px;
+}
+
+.tenant-filter-form .field {
+    margin: 0;
+}
+
+.tenant-filter-form select {
+    width: 100%;
+}
+.tenants-list-head {
+    align-items: end;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.tenant-filter-form-inline {
+    width: min(280px, 100%);
+}
+
+.tenant-filter-form-inline .field {
+    min-width: 220px;
+}
+
+.tenants-list-head .btn-primary {
+    min-height: 42px;
+}
+
+@media (max-width: 640px) {
+    .tenants-list-head {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .tenant-filter-form-inline,
+    .tenant-filter-form-inline .field,
+    .tenants-list-head .btn-primary {
+        width: 100%;
+        min-width: 0;
+    }
+}
+.tenants-list-toolbar {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+.today-collections-filter-toolbar select,
+.loans-page-toolbar select,
+.loans-mobile-toolbar select,
+.tenants-list-toolbar select {
+    background-color: var(--surface);
+}
+
+.today-collections-filter-toolbar select option,
+.loans-page-toolbar select option,
+.loans-mobile-toolbar select option,
+.tenants-list-toolbar select option {
+    background-color: var(--surface);
+    color: var(--text);
+}
+.routes-layout {
+    display: grid;
+    grid-template-columns: minmax(280px, 0.36fr) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+
+.route-create-panel,
+.routes-list-panel {
+    min-width: 0;
+}
+
+.route-form .field.full,
+.route-form .form-actions {
+    grid-column: span 12;
+}
+
+.route-form-actions {
+    justify-content: flex-end;
+}
+
+.routes-table th:nth-child(2),
+.routes-table td:nth-child(2) {
+    width: 110px;
+    text-align: center;
+}
+
+.routes-table th:nth-child(3),
+.routes-table td:nth-child(3) {
+    width: 180px;
+}
+
+.route-inline-form {
+    display: grid;
+    grid-template-columns: minmax(160px, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.route-inline-form input {
+    min-width: 0;
+}
+
+@media (max-width: 900px) {
+    .routes-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .routes-table th:nth-child(2),
+    .routes-table td:nth-child(2),
+    .routes-table th:nth-child(3),
+    .routes-table td:nth-child(3) {
+        width: auto;
+        text-align: left;
+    }
+
+    .route-inline-form {
+        grid-template-columns: 1fr;
+    }
+}
+.loan-route-field,
+.loan-route-select {
+    min-width: 170px;
+}
+
+@media (max-width: 768px) {
+    .loan-mobile-toolbar-secondary {
+        grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1fr) auto;
+    }
+
+    .loan-mobile-route-field,
+    .loan-mobile-route-field select {
+        width: 100%;
+        min-width: 0;
+    }
+}
+
+@media (max-width: 480px) {
+    .loan-mobile-toolbar-secondary {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .loan-mobile-route-field {
+        grid-column: 1 / -1;
+    }
+}
+.route-action-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.routes-table tr.is-selected td {
+    background-color: rgba(47, 94, 143, 0.18);
+}
+
+@media (max-width: 900px) {
+    .route-action-buttons {
+        justify-content: flex-start;
+    }
+}

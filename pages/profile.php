@@ -39,7 +39,7 @@ require __DIR__ . '/../includes/layout_start.php';
     <article class="panel profile-panel">
         <div class="panel-head">
             <h2 class="panel-title">Profile Details</h2>
-            <span class="badge badge-info"><?= e(role_display_name((string) $user['role'])) ?></span>
+            <span class="badge badge-info"><?= e(user_role_display_name($user, $pdo)) ?></span>
         </div>
 
         <form method="post" action="<?= e(url('actions/profile_update.php')) ?>" enctype="multipart/form-data" class="form-grid profile-form-grid">
@@ -77,7 +77,7 @@ require __DIR__ . '/../includes/layout_start.php';
 
             <div class="field">
                 <label>Role</label>
-                <input type="text" value="<?= e(role_display_name((string) $user['role'])) ?>" readonly class="profile-readonly-input">
+                <input type="text" value="<?= e(user_role_display_name($user, $pdo)) ?>" readonly class="profile-readonly-input">
                 <small>Role cannot be changed from profile.</small>
             </div>
 

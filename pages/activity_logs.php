@@ -205,7 +205,7 @@ require __DIR__ . '/../includes/layout_start.php';
             <?php foreach ($logUsers as $user): ?>
                 <?php $userId = (string) $user['id']; ?>
                 <option value="<?= e($userId) ?>" <?= $selectedUser === $userId ? 'selected' : '' ?>>
-                    <?= e((string) $user['full_name']) ?> (<?= e((string) $user['username']) ?> - <?= e(role_display_name((string) $user['role'])) ?>)
+                    <?= e((string) $user['full_name']) ?> (<?= e((string) $user['username']) ?> - <?= e(user_role_display_name($user, $pdo)) ?>)
                 </option>
             <?php endforeach; ?>
         </select>

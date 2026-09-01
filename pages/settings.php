@@ -3,7 +3,11 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/bootstrap.php';
+if (is_owner()) {
+    redirect('pages/tenants.php');
+}
 require_permission('business_settings.manage');
+require_tenant_context();
 
 $pageTitle = 'Business Profile';
 $activePage = 'settings';

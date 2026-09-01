@@ -91,22 +91,27 @@ if (!$targetUser) {
 }
 
 $targetRole = (string) $targetUser['role'];
+$tenantOwnerId = owner_user_id($pdo);
+$isTargetTenantOwner = $targetRole === 'owner' || ($targetRole === 'admin' && $userId === $tenantOwnerId);
 
 if (!is_owner($current) && $targetRole === 'superadmin') {
-    set_flash('error', 'Owner cannot be deleted.');
+    set_flash('error', 'SaaS Admin cannot be deleted.');
     redirect($resolvedDeleteReturnTo);
 }
 
 if ($targetRole === 'superadmin') {
-    set_flash('error', 'Owner cannot be deleted (only one owner allowed).');
+    set_flash('error', 'SaaS Admin cannot be deleted.');
+    redirect($resolvedDeleteReturnTo);
+}
+
+if ($isTargetTenantOwner) {
+    set_flash('error', 'Business owner cannot be deleted (only one owner allowed).');
     redirect($resolvedDeleteReturnTo);
 }
 
 try {
     $pdo->beginTransaction();
 
-    // Reassign linked loans before deleting so no loan loses its collector.
-    $reassignedLoanCount = fallback_loan_assignments_to_owner($pdo, $userId);
     remember_forget_user($pdo, $userId);
 
     $deleteStmt = $pdo->prepare('DELETE FROM users WHERE id = :id');
@@ -126,7 +131,6 @@ log_activity($pdo, 'user.deleted', 'User deleted: ' . (string) $targetUser['full
     'user_id' => $userId,
     'username' => (string) $targetUser['username'],
     'role' => role_display_name((string) $targetUser['role']),
-    'reassigned_loans_to_owner' => $reassignedLoanCount ?? 0,
 ]);
 
 set_flash('success', 'User deleted successfully.');

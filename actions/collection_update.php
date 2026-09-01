@@ -193,7 +193,6 @@ if (!payment_method_selection_enabled($pdo) || !in_array($method, ['cash', 'bank
 
 $current = current_user();
 $currentUserId = (int) ($current['id'] ?? 0);
-$currentRole = (string) ($current['role'] ?? '');
 $currentUserName = (string) ($current['full_name'] ?? 'Unknown');
 $allowOverpayment = system_setting($pdo, 'allow_overpayment', '1') !== '0';
 
@@ -215,10 +214,6 @@ try {
         throw new RuntimeException('Loan not found.');
     }
 
-    $assignedUserId = (int) ($loan['assigned_user_id'] ?? 0);
-    if (is_collector_role($currentRole) && $assignedUserId > 0 && $assignedUserId !== $currentUserId) {
-        throw new RuntimeException('You can only edit collections for loans assigned to you.');
-    }
 
     $allRowsStmt = $pdo->prepare(
         'SELECT *

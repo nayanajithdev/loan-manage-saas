@@ -99,6 +99,8 @@ if (!$targetUser) {
 }
 
 $targetRole = (string) $targetUser['role'];
+$tenantOwnerId = owner_user_id($pdo);
+$isTargetTenantOwner = $targetRole === 'owner' || ($targetRole === 'admin' && $userId === $tenantOwnerId);
 $isSelf = (int) ($current['id'] ?? 0) === $userId
     || ((string) ($current['username'] ?? '') !== '' && (string) $current['username'] === (string) $targetUser['username'])
     || ((string) ($current['email'] ?? '') !== '' && (string) ($current['email'] ?? '') === (string) ($targetUser['email'] ?? ''));
@@ -108,10 +110,17 @@ if ($isSelf && !is_owner($current)) {
     redirect('pages/users.php');
 }
 
+if ($isTargetTenantOwner && !is_owner($current)) {
+    set_flash('error', 'Business owner account cannot be edited from user management.');
+    redirect('pages/users.php');
+}
+
 if ($targetRole === 'superadmin') {
     $role = 'superadmin';
+} elseif ($isTargetTenantOwner) {
+    $role = 'owner';
 } else {
-    if (!in_array($role, ['admin', 'collector'], true)) {
+    if (!in_array($role, ['manager', 'collector'], true)) {
         set_flash('error', 'Invalid role selected.');
         redirect($resolvedEditReturnTo);
     }
@@ -128,7 +137,7 @@ if (!is_owner($current)) {
 if (!in_array($status, ['active', 'inactive'], true)) {
     $status = (string) $targetUser['status'];
 }
-if ($targetRole === 'superadmin' || $isSelf) {
+if ($targetRole === 'superadmin' || $isTargetTenantOwner || $isSelf) {
     $status = 'active';
 }
 
@@ -202,7 +211,7 @@ if ($isSelf) {
     $_SESSION['auth_user']['status'] = $status;
 }
 
-if ($targetRole !== 'superadmin') {
+if ($targetRole !== 'superadmin' && !$isTargetTenantOwner) {
     sync_user_permissions($pdo, $userId, (array) ($_POST['permissions'] ?? []));
 }
 

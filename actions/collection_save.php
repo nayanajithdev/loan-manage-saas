@@ -167,17 +167,6 @@ try {
     $currentUserName = (string) ($current['full_name'] ?? 'Unknown');
     $loanNumber = (string) ($loan['loan_number'] ?? ('#' . $loanId));
 
-    $assignedUserId = isset($loan['assigned_user_id']) ? (int) $loan['assigned_user_id'] : 0;
-    $assignedUser = null;
-    if ($assignedUserId > 0) {
-        $assignedUserStmt = $pdo->prepare('SELECT id, full_name, role FROM users WHERE id = :id AND ' . tenant_scope_sql() . ' LIMIT 1');
-        $assignedUserStmt->execute(tenant_scope_params(['id' => $assignedUserId]));
-        $assignedUser = $assignedUserStmt->fetch() ?: null;
-    }
-
-    if (is_collector_role($currentRole) && $assignedUserId > 0 && $assignedUserId !== $currentUserId) {
-        throw new RuntimeException('You can only collect payments for loans assigned to you.');
-    }
     $oldestCollectibleSql = "SELECT *
          FROM loan_installments
          WHERE loan_id = :loan_id
@@ -266,14 +255,6 @@ try {
     $pdo->commit();
 
     $activityDescription = $currentUserName . ' recorded collection for loan ' . $loanNumber . '.';
-    if (
-        !is_collector_role($currentRole)
-        && $assignedUser !== null
-        && is_collector_role((string) ($assignedUser['role'] ?? ''))
-        && (int) ($assignedUser['id'] ?? 0) !== $currentUserId
-    ) {
-        $activityDescription = $currentUserName . ' collected ' . (string) $assignedUser['full_name'] . "'s collection.";
-    }
 
     log_activity($pdo, 'collection.recorded', $activityDescription, [
         'loan_id' => $loanId,
@@ -289,7 +270,6 @@ try {
         'scheduled_installment_id' => (int) ($scheduledInstallment['installment_id'] ?? 0),
         'scheduled_to_date' => (string) ($scheduledInstallment['to_due_date'] ?? ''),
         'schedule_skipped_no_pending' => $scheduleSkippedNoPending ? 1 : 0,
-        'assigned_user' => $assignedUser !== null ? (string) ($assignedUser['full_name'] ?? '') : 'Owner',
     ]);
 
     if ($scheduleNextPayment && $scheduledInstallment !== null && (bool) ($scheduledInstallment['changed'] ?? false)) {

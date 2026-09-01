@@ -29,12 +29,13 @@ if ($search !== '') {
     $params['search'] = '%' . $search . '%';
 }
 
-$sql .= " ORDER BY FIELD(role, 'superadmin', 'admin', 'collector'), full_name ASC, id ASC";
+$sql .= " ORDER BY FIELD(role, 'superadmin', 'owner', 'manager', 'admin', 'collector'), full_name ASC, id ASC";
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $users = $stmt->fetchAll();
 $current = current_user();
+$tenantOwnerId = owner_user_id($pdo);
 
 require __DIR__ . '/../includes/layout_start.php';
 ?>
@@ -82,14 +83,16 @@ require __DIR__ . '/../includes/layout_start.php';
                     <?php
                     $role = (string) $user['role'];
                     $isOwnerRole = $role === 'superadmin';
+                    $isTenantOwnerRole = $role === 'owner' || ($role === 'admin' && (int) $user['id'] === $tenantOwnerId);
                     $isCurrentUser = $current && (
                         (int) ($current['id'] ?? 0) === (int) $user['id']
                         || ((string) ($current['username'] ?? '') !== '' && (string) $current['username'] === (string) $user['username'])
                         || ((string) ($current['email'] ?? '') !== '' && (string) ($current['email'] ?? '') === (string) ($user['email'] ?? ''))
                     );
                     $isSelfRestricted = $isCurrentUser && !is_owner($current);
-                    $canOpenUser = !$isOwnerRole && !$isSelfRestricted;
-                    $roleBadge = $isOwnerRole ? 'info' : ($role === 'admin' ? 'warning' : 'neutral');
+                    $canOpenUser = !$isOwnerRole && !$isTenantOwnerRole && !$isSelfRestricted;
+                    $roleBadge = $isOwnerRole ? 'info' : (in_array($role, ['owner', 'manager', 'admin'], true) ? 'warning' : 'neutral');
+                    $roleLabel = $isTenantOwnerRole ? 'Owner' : role_display_name($role);
                     $statusBadge = ((string) $user['status']) === 'active' ? 'success' : 'danger';
                     $editUrl = url('pages/user_edit.php?user_id=' . (int) $user['id']);
                     ?>
@@ -97,7 +100,7 @@ require __DIR__ . '/../includes/layout_start.php';
                         <td data-label="Name"><?= e((string) $user['full_name']) ?></td>
                         <td data-label="Email"><?= e((string) ($user['email'] ?? '-')) ?></td>
                         <td data-label="Username"><?= e((string) $user['username']) ?></td>
-                        <td data-label="Role"><span class="badge badge-<?= e($roleBadge) ?>"><?= e(role_display_name($role)) ?></span></td>
+                        <td data-label="Role"><span class="badge badge-<?= e($roleBadge) ?>"><?= e($roleLabel) ?></span></td>
                         <td data-label="Status"><span class="badge badge-<?= e($statusBadge) ?>"><?= e(ucfirst((string) $user['status'])) ?></span></td>
                         <td data-label="Created"><?= e(display_date(substr((string) $user['created_at'], 0, 10))) ?></td>
                         <td data-label="Action">

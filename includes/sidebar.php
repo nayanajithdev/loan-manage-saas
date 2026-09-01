@@ -11,6 +11,7 @@ if ($businessInitial === '') {
 $iconSvgs = [
     'dashboard' => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>',
     'customers' => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><path d="M16 3.128a4 4 0 0 1 0 7.744"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><circle cx="9" cy="7" r="4"/></svg>',
+    'routes' => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>',
     'loans' => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 15h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 17"/><path d="m7 21 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9"/><path d="m2 16 6 6"/><circle cx="16" cy="9" r="2.9"/><circle cx="6" cy="5" r="3"/></svg>',
     'calculator' => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></svg>',
     'today_collections' => '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>',
@@ -47,6 +48,9 @@ if (!is_owner($authUser) && can('customers.view')) {
 if (!is_owner($authUser) && can('loans.view')) {
     $menuItems[] = ['key' => 'loans', 'label' => 'Loans', 'path' => 'pages/loans.php', 'create_permission' => 'loans.create'];
 }
+if (!is_owner($authUser) && can('routes.view')) {
+    $menuItems[] = ['key' => 'routes', 'label' => 'Routes', 'path' => 'pages/routes.php'];
+}
 if (!is_owner($authUser)) {
     $menuItems[] = ['key' => 'calculator', 'label' => 'Calculator', 'path' => 'pages/calculator.php'];
 }
@@ -56,9 +60,7 @@ if (!is_owner($authUser) && can('users.manage')) {
 
 /** @var array<int, array{key:string,label:string,path:string}> $settingsChildren */
 $settingsChildren = [];
-if (!is_owner($authUser) && can('backup.manage')) {
-    $settingsChildren[] = ['key' => 'backup', 'label' => 'Backup / Restore', 'path' => 'pages/backup.php'];
-}
+
 if (!is_owner($authUser) && can('holidays.manage')) {
     $settingsChildren[] = ['key' => 'holiday_mode', 'label' => 'Holiday Mode', 'path' => 'pages/holiday_mode.php'];
 }
@@ -125,7 +127,7 @@ $brandHref = can('business_settings.manage') ? 'pages/settings.php' : 'pages/abo
                 </span>
                 <span class="user-menu-meta">
                     <strong><?= e($authUser['full_name']) ?></strong>
-                    <small><?= e(role_display_name((string) $authUser['role'])) ?></small>
+                    <small><?= e(user_role_display_name($authUser, $pdo)) ?></small>
                 </span>
                 <span class="user-menu-chevron" aria-hidden="true">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

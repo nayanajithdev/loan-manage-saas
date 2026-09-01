@@ -15,6 +15,7 @@ require_csrf('pages/loans.php');
 
 $loanId = (int) ($_POST['loan_id'] ?? 0);
 $customerId = (int) ($_POST['customer_id'] ?? 0);
+$routeIdInput = (int) ($_POST['route_id'] ?? 0);
 $issuedDate = trim((string) ($_POST['issued_date'] ?? today()));
 $principal = (float) ($_POST['principal_amount'] ?? 0);
 $interestRate = (float) ($_POST['interest_rate'] ?? 0);
@@ -30,13 +31,9 @@ $nextPaymentDateInput = trim((string) ($_POST['next_payment_date'] ?? ''));
 $roundedInstallmentAmount = round((float) ($_POST['rounded_installment_amount'] ?? 0), 2);
 $useRoundedInstallment = ((int) ($_POST['use_rounded_installment'] ?? 0) === 1) || $roundedInstallmentAmount > 0;
 $canEditLoan = can('loans.edit');
-$canEditAssignment = can('loans.assign');
 $canScheduleNextPayment = can('collections.schedule');
 $canExtendLoan = can('loans.extend');
-$postedAssignedUserId = (int) ($_POST['assigned_user_id'] ?? 0);
-$assignedUserId = $canEditAssignment
-    ? ($postedAssignedUserId > 0 ? assignable_collector_id_or_default($pdo, $postedAssignedUserId) : null)
-    : 0;
+$routeId = normalize_route_id($pdo, $routeIdInput);
 
 if ($loanId <= 0) {
     set_flash('error', 'Invalid loan selected.');
@@ -171,8 +168,10 @@ if (!$customerStmt->fetch()) {
     redirect('pages/loan_edit.php?loan_id=' . $loanId);
 }
 
-if ($canEditAssignment && $assignedUserId !== null && $assignedUserId <= 0) {
-    set_flash('error', 'Owner account is required before assigning loans.');
+
+
+if ($routeIdInput > 0 && $routeId === null) {
+    set_flash('error', 'Selected route is not available.');
     redirect('pages/loan_edit.php?loan_id=' . $loanId);
 }
 
@@ -584,6 +583,7 @@ try {
 
         $updateLocked = $pdo->prepare(
             'UPDATE loans SET
+                route_id = :route_id,
                 issued_date = :issued_date,
                 principal_amount = :principal_amount,
                 interest_rate = :interest_rate,
@@ -599,6 +599,11 @@ try {
              WHERE id = :id
                AND tenant_id = :tenant_id'
         );
+        if ($routeId === null) {
+            $updateLocked->bindValue(':route_id', null, PDO::PARAM_NULL);
+        } else {
+            $updateLocked->bindValue(':route_id', $routeId, PDO::PARAM_INT);
+        }
         $updateLocked->bindValue(':issued_date', $issuedDate, PDO::PARAM_STR);
         $updateLocked->bindValue(':principal_amount', $principal);
         $updateLocked->bindValue(':interest_rate', $interestRate);
@@ -620,6 +625,7 @@ try {
         $updateLoan = $pdo->prepare(
             'UPDATE loans SET
                 customer_id = :customer_id,
+                route_id = :route_id,
                 issued_date = :issued_date,
                 principal_amount = :principal_amount,
                 interest_rate = :interest_rate,
@@ -636,6 +642,11 @@ try {
                AND tenant_id = :tenant_id'
         );
         $updateLoan->bindValue(':customer_id', $customerId, PDO::PARAM_INT);
+        if ($routeId === null) {
+            $updateLoan->bindValue(':route_id', null, PDO::PARAM_NULL);
+        } else {
+            $updateLoan->bindValue(':route_id', $routeId, PDO::PARAM_INT);
+        }
         $updateLoan->bindValue(':issued_date', $issuedDate, PDO::PARAM_STR);
         $updateLoan->bindValue(':principal_amount', $principal);
         $updateLoan->bindValue(':interest_rate', $interestRate);
@@ -691,17 +702,6 @@ try {
         ]));
     }
 
-    if ($canEditAssignment) {
-        $assignStmt = $pdo->prepare('UPDATE loans SET assigned_user_id = :assigned_user_id WHERE id = :loan_id AND ' . tenant_scope_sql());
-        if ($assignedUserId === null) {
-            $assignStmt->bindValue(':assigned_user_id', null, PDO::PARAM_NULL);
-        } else {
-            $assignStmt->bindValue(':assigned_user_id', $assignedUserId, PDO::PARAM_INT);
-        }
-        $assignStmt->bindValue(':loan_id', $loanId, PDO::PARAM_INT);
-        $assignStmt->bindValue(':tenant_id', require_tenant_context('pages/loans.php'), PDO::PARAM_INT);
-        $assignStmt->execute();
-    }
 
     $scheduledInstallment = null;
     $scheduleSkippedNoPending = false;
@@ -728,8 +728,9 @@ try {
     log_activity($pdo, 'loan.updated', 'Loan updated: ' . $loanNumber . '.', [
         'loan_id' => $loanId,
         'customer_id' => $customerId,
+        'route_id' => $routeId,
         'issued_date' => $issuedDate,
-        'assigned_user_id' => $canEditAssignment ? $assignedUserId : (int) ($loan['assigned_user_id'] ?? 0),
+
         'interest_rate_type' => $interestRateType,
         'interest_rate_months' => $interestRateType === 'monthly' ? $interestRateMonths : 1,
         'status' => $status,

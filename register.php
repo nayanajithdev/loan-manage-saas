@@ -44,10 +44,7 @@ if ($loginBusinessName === '') {
                 <label>Business Name</label>
                 <input type="text" name="name" required autofocus>
             </div>
-            <div class="field full">
-                <label>Preferred Slug</label>
-                <input type="text" name="slug" placeholder="optional">
-            </div>
+
             <div class="field full">
                 <label>Owner Name</label>
                 <input type="text" name="owner_name" required>
@@ -61,7 +58,7 @@ if ($loginBusinessName === '') {
                 <input type="text" name="phone">
             </div>
             <div class="field full">
-                <label>Admin Username</label>
+                <label>Owner Username</label>
                 <input type="text" name="username" required>
             </div>
             <div class="field full">
@@ -72,10 +69,7 @@ if ($loginBusinessName === '') {
                 <label>Confirm Password</label>
                 <input type="password" name="confirm_password" required minlength="6">
             </div>
-            <div class="field full">
-                <label>Notes</label>
-                <textarea name="notes" rows="3" placeholder="optional"></textarea>
-            </div>
+
             <div class="field full" style="align-self:end;">
                 <button type="submit" class="btn btn-primary">Register Tenant</button>
             </div>

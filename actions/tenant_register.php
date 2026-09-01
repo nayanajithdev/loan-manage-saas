@@ -54,7 +54,7 @@ $userStmt->execute([
     'email' => $ownerEmail,
 ]);
 if ($userStmt->fetch()) {
-    set_flash('error', 'Admin username or owner email already exists.');
+    set_flash('error', 'Owner username or owner email already exists.');
     redirect('register.php');
 }
 
@@ -85,11 +85,11 @@ try {
         'username' => $username,
         'email' => $ownerEmail,
         'password_hash' => password_hash($password, PASSWORD_DEFAULT),
-        'role' => 'admin',
+        'role' => 'owner',
         'status' => 'active',
     ]);
     $adminUserId = (int) $pdo->lastInsertId();
-    sync_user_permissions($pdo, $adminUserId, role_default_permissions('admin'));
+    sync_user_permissions($pdo, $adminUserId, role_default_permissions('owner'));
 
     $settingsStmt = $pdo->prepare(
         'INSERT INTO system_settings (tenant_id, setting_key, setting_value, updated_by_user_id)

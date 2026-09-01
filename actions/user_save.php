@@ -80,7 +80,7 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
     redirect($resolvedCreateReturnTo);
 }
 
-if (!in_array($role, ['admin', 'collector'], true)) {
+if (!in_array($role, ['manager', 'collector'], true)) {
     set_flash('error', 'Invalid role selected.');
     redirect($resolvedCreateReturnTo);
 }

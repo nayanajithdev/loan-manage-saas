@@ -86,12 +86,24 @@ function role_display_name(string $role): string
 {
     return match ($role) {
         'superadmin' => 'SaaS Admin',
-        'admin' => 'Owner',
+        'owner' => 'Owner',
+        'manager' => 'Manager',
+        'admin' => 'Manager',
         'collector' => 'Collector',
         default => ucfirst($role),
     };
 }
 
+function user_role_display_name(array $user, ?PDO $pdo = null): string
+{
+    if ((string) ($user['role'] ?? '') === 'owner'
+        || ((string) ($user['role'] ?? '') === 'admin' && is_tenant_owner($user, $pdo))
+    ) {
+        return 'Owner';
+    }
+
+    return role_display_name((string) ($user['role'] ?? ''));
+}
 function permission_groups(): array
 {
     return [
@@ -114,10 +126,9 @@ function permission_groups(): array
             ],
         ],
         'Customers' => [
-            'description' => 'Customer records, documents, and customer access scope.',
+            'description' => 'Customer records and documents.',
             'permissions' => [
                 'customers.view' => ['label' => 'View Customers', 'description' => 'Open customer list and customer details.'],
-                'customers.view_all' => ['label' => 'View All Customers', 'description' => 'Bypass assigned customer scope.'],
                 'customers.create' => ['label' => 'Create Customers', 'description' => 'Add new customer records.'],
                 'customers.edit' => ['label' => 'Edit Customers', 'description' => 'Update existing customer records.'],
                 'customers.delete' => ['label' => 'Delete Customers', 'description' => 'Delete customers with no linked loans.'],
@@ -125,25 +136,27 @@ function permission_groups(): array
             ],
         ],
         'Loans' => [
-            'description' => 'Loan records and loan assignment.',
+            'description' => 'Loan records and repayment schedules.',
             'permissions' => [
                 'loans.view' => ['label' => 'View Loans', 'description' => 'Open loan list and loan details.'],
                 'loans.create' => ['label' => 'Create Loans', 'description' => 'Create loan records and repayment schedules.'],
                 'loans.edit' => ['label' => 'Edit Loans', 'description' => 'Update loan notes, status, and allowed editable fields.'],
                 'loans.extend' => ['label' => 'Extend Loans', 'description' => 'Extend active loans with extra amount or end date changes.'],
                 'loans.delete' => ['label' => 'Delete Loans', 'description' => 'Delete loans and their schedules.'],
-                'loans.assign' => ['label' => 'Assign Loans', 'description' => 'Assign a loan to a collector.'],
+                'routes.view' => ['label' => 'View Routes', 'description' => 'Open route list and route loan counts.'],
+                'routes.create' => ['label' => 'Create Routes', 'description' => 'Create collection routes.'],
+                'routes.edit' => ['label' => 'Rename Routes', 'description' => 'Rename existing routes.'],
+                'routes.delete' => ['label' => 'Delete Routes', 'description' => 'Delete routes that do not have assigned loans.'],
                 'collections.loan_records' => ['label' => 'Loan Collection Records', 'description' => 'View the Collection Records tab inside loan details.'],
                 'collections.loan_records_edit' => ['label' => 'Edit Collection Records', 'description' => 'Edit saved collection records inside loan details.'],
                 'collections.loan_records_delete' => ['label' => 'Delete Collection Records', 'description' => 'Delete saved collection records inside loan details.'],
             ],
         ],
         'Management' => [
-            'description' => 'Users, reports, audit logs, settings, and backups.',
+            'description' => 'Users, reports, audit logs, and settings.',
             'permissions' => [
                 'users.manage' => ['label' => 'Users', 'description' => 'Create, edit, deactivate, and delete users.'],
                 'reports.view' => ['label' => 'Reports', 'description' => 'View business and collection reports.'],
-                'backup.manage' => ['label' => 'Backup / Restore', 'description' => 'Download and restore database/full backups.'],
                 'holidays.manage' => ['label' => 'Holiday Mode', 'description' => 'Mark holidays and shift unpaid collection schedules.'],
                 'activity_logs.view' => ['label' => 'Activity Logs', 'description' => 'Review audit history and user actions.'],
                 'business_settings.manage' => ['label' => 'Business Settings', 'description' => 'Update business profile and business icon.'],
@@ -174,7 +187,6 @@ function permission_dependencies(): array
         'collections.backdate' => ['today_collections.view', 'collections.record'],
         'collections.schedule' => ['today_collections.view'],
         'collections.loan_records' => ['loans.view'],
-        'customers.view_all' => ['customers.view'],
         'customers.create' => ['customers.view'],
         'customers.edit' => ['customers.view'],
         'customers.delete' => ['customers.view'],
@@ -183,7 +195,9 @@ function permission_dependencies(): array
         'loans.edit' => ['loans.view'],
         'loans.extend' => ['loans.view'],
         'loans.delete' => ['loans.view'],
-        'loans.assign' => ['loans.view'],
+        'routes.create' => ['routes.view'],
+        'routes.edit' => ['routes.view'],
+        'routes.delete' => ['routes.view'],
         'collections.loan_records_edit' => ['collections.loan_records'],
         'collections.loan_records_delete' => ['collections.loan_records_edit'],
         'system_settings.manage' => ['system_settings.view'],
@@ -231,9 +245,12 @@ function role_default_permissions(string $role): array
         return $all;
     }
 
-    if ($role === 'admin') {
+    if ($role === 'owner') {
+        return $all;
+    }
+
+    if ($role === 'manager' || $role === 'admin') {
         return array_values(array_diff($all, [
-            'backup.manage',
             'activity_logs.view',
             'system_settings.manage',
         ]));
@@ -249,7 +266,6 @@ function role_default_permissions(string $role): array
         'customers.view',
     ];
 }
-
 function collection_note_split(?string $rawNote): array
 {
     $note = trim((string) $rawNote);
@@ -1396,10 +1412,6 @@ function collection_due_installments_for_date(PDO $pdo, string $selectedDate, st
         $params['selected_date'] = $selectedDate;
     }
 
-    if (is_collector_role($currentRole)) {
-        $sql .= ' AND ' . collector_assignment_scope_sql('l', 'assigned_user_id');
-        $params['assigned_user_id'] = $currentUserId;
-    }
 
     if ($search !== '') {
         $sql .= " AND (l.loan_number LIKE :q_loan OR c.full_name LIKE :q_name OR c.phone LIKE :q_phone)";
@@ -1512,10 +1524,6 @@ function collection_collected_installments_for_date(PDO $pdo, string $selectedDa
 
     $params = tenant_scope_params(['selected_date' => $selectedDate]);
 
-    if (is_collector_role($currentRole)) {
-        $sql .= ' AND ' . collector_assignment_scope_sql('l', 'assigned_user_id');
-        $params['assigned_user_id'] = $currentUserId;
-    }
 
     if ($search !== '') {
         $sql .= " AND (l.loan_number LIKE :q_loan OR c.full_name LIKE :q_name OR c.phone LIKE :q_phone)";
@@ -2113,7 +2121,6 @@ function undo_collection_payment(PDO $pdo, int $collectionId, int $actorUserId, 
         "SELECT
             col.*,
             l.loan_number,
-            l.assigned_user_id,
             c.full_name AS customer_name
          FROM collections col
          JOIN loans l ON l.id = col.loan_id
@@ -2135,10 +2142,6 @@ function undo_collection_payment(PDO $pdo, int $collectionId, int $actorUserId, 
         throw new RuntimeException('This collection cannot be undone because it does not have a payment reference.');
     }
 
-    $assignedUserId = (int) ($collection['assigned_user_id'] ?? 0);
-    if (is_collector_role($actorRole) && $assignedUserId > 0 && $assignedUserId !== $actorUserId) {
-        throw new RuntimeException('You can only undo collections for loans assigned to you.');
-    }
 
     $paymentRowsStmt = $pdo->prepare(
         'SELECT *
@@ -2316,7 +2319,6 @@ function dashboard_stats(PDO $pdo, ?array $viewer = null): array
 
     $viewerRole = (string) ($viewer['role'] ?? '');
     $viewerId = (int) ($viewer['id'] ?? 0);
-    $isCollectorScope = is_collector_role($viewerRole) && $viewerId > 0;
     $tenantId = current_tenant_id($viewer);
 
     $totals = [
@@ -2336,7 +2338,6 @@ function dashboard_stats(PDO $pdo, ?array $viewer = null): array
         'total_collected' => 0.0,
     ];
 
-    if (!$isCollectorScope) {
         $params = [];
         $customerScope = '';
         $loanScope = '';
@@ -2399,70 +2400,6 @@ function dashboard_stats(PDO $pdo, ?array $viewer = null): array
         $totals['daily_collected_amount'] = (float) ($dailyProfitRow['collected_amount'] ?? 0);
         $totals['daily_profit'] = (float) ($dailyProfitRow['profit_amount'] ?? 0);
 
-    } else {
-        $scope = collector_assignment_scope_sql('l', 'viewer_user_id');
-        if ($tenantId !== null) {
-            $scope .= ' AND l.tenant_id = :tenant_id';
-        }
-        $collectorParams = ['viewer_user_id' => $viewerId];
-        if ($tenantId !== null) {
-            $collectorParams['tenant_id'] = $tenantId;
-        }
-
-        $stmt = $pdo->prepare("SELECT COUNT(DISTINCT l.customer_id) FROM loans l WHERE {$scope}");
-        $stmt->execute($collectorParams);
-        $totals['customers'] = (int) $stmt->fetchColumn();
-
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM loans l WHERE l.status = 'active' AND {$scope}");
-        $stmt->execute($collectorParams);
-        $totals['active_loans'] = (int) $stmt->fetchColumn();
-
-        $stmt = $pdo->prepare("SELECT COALESCE(SUM(li.due_amount - li.paid_amount), 0) FROM loan_installments li JOIN loans l ON l.id = li.loan_id WHERE l.status = 'active' AND li.status IN ('pending', 'partial', 'overdue') AND {$scope}");
-        $stmt->execute($collectorParams);
-        $totals['outstanding_principal'] = (float) $stmt->fetchColumn();
-
-        $stmt = $pdo->prepare("SELECT COALESCE(SUM(l.total_amount - l.principal_amount), 0) FROM loans l WHERE l.status = 'closed' AND {$scope}");
-        $stmt->execute($collectorParams);
-        $totals['closed_loans_profit'] = (float) $stmt->fetchColumn();
-
-        $stmt = $pdo->prepare("SELECT COALESCE(SUM(l.total_amount - l.principal_amount), 0) FROM loans l WHERE l.status <> 'closed' AND {$scope}");
-        $stmt->execute($collectorParams);
-        $totals['expected_open_profit'] = (float) $stmt->fetchColumn();
-
-        $stmt = $pdo->prepare("SELECT COALESCE(SUM(l.principal_amount), 0) FROM loans l WHERE {$scope}");
-        $stmt->execute($collectorParams);
-        $totals['total_disbursed'] = (float) $stmt->fetchColumn();
-
-        $stmt = $pdo->prepare("SELECT COALESCE(SUM(col.amount), 0) FROM collections col JOIN loans l ON l.id = col.loan_id WHERE {$scope}");
-        $stmt->execute($collectorParams);
-        $totals['total_collected'] = (float) $stmt->fetchColumn();
-        $stmt = $pdo->prepare(
-            "SELECT
-                COALESCE(SUM(col.amount), 0) AS collected_amount,
-                COALESCE(SUM(
-                    CASE
-                        WHEN l.total_amount > 0
-                        THEN col.amount * ((l.total_amount - l.principal_amount) / l.total_amount)
-                        ELSE 0
-                    END
-                ), 0) AS profit_amount
-             FROM collections col
-             JOIN loans l ON l.id = col.loan_id
-             WHERE col.collected_on = :today AND {$scope}"
-        );
-        $dailyParams = [
-            'today' => today(),
-            'viewer_user_id' => $viewerId,
-        ];
-        if ($tenantId !== null) {
-            $dailyParams['tenant_id'] = $tenantId;
-        }
-        $stmt->execute($dailyParams);
-        $dailyProfitRow = $stmt->fetch() ?: [];
-        $totals['daily_collected_amount'] = (float) ($dailyProfitRow['collected_amount'] ?? 0);
-        $totals['daily_profit'] = (float) ($dailyProfitRow['profit_amount'] ?? 0);
-
-    }
 
     $todayDueRows = collection_due_installments_for_date($pdo, today(), today(), '', $viewerRole, $viewerId);
     $todayDueAmount = 0.0;
@@ -2500,23 +2437,51 @@ function ensure_user_schema(PDO $pdo): void
     $roleColumn = $roleColStmt->fetch();
 
     if (!$roleColumn) {
-        $pdo->exec("ALTER TABLE users ADD COLUMN role ENUM('superadmin','admin','collector') NOT NULL DEFAULT 'admin' AFTER password_hash");
+        $pdo->exec("ALTER TABLE users ADD COLUMN role ENUM('superadmin','owner','manager','collector') NOT NULL DEFAULT 'manager' AFTER password_hash");
         return;
     }
 
-    $type = strtolower((string) ($roleColumn['Type'] ?? ''));
-    if (str_contains($type, 'collector_l1') || str_contains($type, 'collector_l2')) {
-        try {
-            ensure_user_permissions_schema($pdo);
-            $pdo->exec("ALTER TABLE users MODIFY COLUMN role ENUM('superadmin','admin','collector_l1','collector_l2','collector') NOT NULL DEFAULT 'admin'");
-            $pdo->exec("UPDATE users SET role = 'collector' WHERE role IN ('collector_l1', 'collector_l2')");
-            $pdo->exec("ALTER TABLE users MODIFY COLUMN role ENUM('superadmin','admin','collector') NOT NULL DEFAULT 'admin'");
-        } catch (Throwable $e) {
-            error_log('Failed to normalize users.role enum: ' . $e->getMessage());
+    try {
+        ensure_user_permissions_schema($pdo);
+        $pdo->exec("ALTER TABLE users MODIFY COLUMN role ENUM('superadmin','admin','owner','manager','collector_l1','collector_l2','collector') NOT NULL DEFAULT 'manager'");
+        $pdo->exec("UPDATE users SET role = 'collector' WHERE role IN ('collector_l1', 'collector_l2')");
+        $pdo->exec("UPDATE users u
+            JOIN (
+                SELECT tenant_id, MIN(id) AS owner_id
+                FROM users
+                WHERE tenant_id IS NOT NULL
+                  AND role IN ('admin', 'owner')
+                GROUP BY tenant_id
+            ) tenant_owner ON tenant_owner.tenant_id = u.tenant_id
+            SET u.role = CASE WHEN u.id = tenant_owner.owner_id THEN 'owner' ELSE 'manager' END
+            WHERE u.tenant_id IS NOT NULL
+              AND u.role IN ('admin', 'owner')");
+        $pdo->exec("UPDATE users SET role = 'manager' WHERE role = 'admin'");
+        $pdo->exec("ALTER TABLE users MODIFY COLUMN role ENUM('superadmin','owner','manager','collector') NOT NULL DEFAULT 'manager'");
+        $ownerPermissionKeys = role_default_permissions('owner');
+        $ownerRows = $pdo->query("SELECT id FROM users WHERE role = 'owner'")->fetchAll();
+        $ownerPermissionStmt = $pdo->prepare(
+            'INSERT INTO user_permissions (user_id, permission_key, allowed)
+             VALUES (:user_id, :permission_key, 1)
+             ON DUPLICATE KEY UPDATE allowed = VALUES(allowed)'
+        );
+        foreach ($ownerRows as $ownerRow) {
+            $ownerUserId = (int) ($ownerRow['id'] ?? 0);
+            if ($ownerUserId <= 0) {
+                continue;
+            }
+
+            foreach ($ownerPermissionKeys as $permissionKey) {
+                $ownerPermissionStmt->execute([
+                    'user_id' => $ownerUserId,
+                    'permission_key' => $permissionKey,
+                ]);
+            }
         }
+    } catch (Throwable $e) {
+        error_log('Failed to normalize users.role enum: ' . $e->getMessage());
     }
 }
-
 function ensure_user_permissions_schema(PDO $pdo): void
 {
     $pdo->exec(
@@ -2530,6 +2495,8 @@ function ensure_user_permissions_schema(PDO $pdo): void
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )"
     );
+
+    $pdo->exec("DELETE FROM user_permissions WHERE permission_key = 'customers.view_all'");
 
     $validKeys = permission_keys();
     if ($validKeys === []) {
@@ -2568,6 +2535,58 @@ function ensure_user_permissions_schema(PDO $pdo): void
 
 }
 
+function ensure_one_owner_per_tenant_schema(PDO $pdo): void
+{
+    try {
+        $ownerRows = $pdo->query(
+            "SELECT id, tenant_id
+             FROM users
+             WHERE tenant_id IS NOT NULL
+               AND role = 'owner'
+             ORDER BY tenant_id ASC, id ASC"
+        )->fetchAll();
+
+        $seenTenantIds = [];
+        $demotedUserIds = [];
+        foreach ($ownerRows as $ownerRow) {
+            $tenantId = (int) ($ownerRow['tenant_id'] ?? 0);
+            $userId = (int) ($ownerRow['id'] ?? 0);
+            if ($tenantId <= 0 || $userId <= 0) {
+                continue;
+            }
+
+            if (!isset($seenTenantIds[$tenantId])) {
+                $seenTenantIds[$tenantId] = true;
+                continue;
+            }
+
+            $demotedUserIds[] = $userId;
+        }
+
+        if ($demotedUserIds !== []) {
+            $demoteStmt = $pdo->prepare("UPDATE users SET role = 'manager', status = 'active' WHERE id = :id");
+            foreach ($demotedUserIds as $demotedUserId) {
+                $demoteStmt->execute(['id' => $demotedUserId]);
+                sync_user_permissions($pdo, $demotedUserId, role_default_permissions('manager'));
+            }
+        }
+
+        if (!table_has_column($pdo, 'users', 'owner_tenant_unique_key')) {
+            $pdo->exec(
+                "ALTER TABLE users
+                 ADD COLUMN owner_tenant_unique_key INT
+                 GENERATED ALWAYS AS (CASE WHEN role = 'owner' THEN tenant_id ELSE NULL END) STORED
+                 AFTER role"
+            );
+        }
+
+        if (!table_has_index($pdo, 'users', 'uq_users_one_owner_per_tenant')) {
+            $pdo->exec('ALTER TABLE users ADD UNIQUE KEY uq_users_one_owner_per_tenant (owner_tenant_unique_key)');
+        }
+    } catch (Throwable $e) {
+        error_log('Failed to enforce one owner per tenant: ' . $e->getMessage());
+    }
+}
 function ensure_user_email_schema(PDO $pdo): void
 {
     $emailColStmt = $pdo->query("SHOW COLUMNS FROM users LIKE 'email'");
@@ -2831,6 +2850,73 @@ function repair_loan_installment_counts_from_history(PDO $pdo): void
     }
 }
 
+function ensure_routes_schema(PDO $pdo): void
+{
+    safe_exec_schema($pdo, "CREATE TABLE IF NOT EXISTS routes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        name VARCHAR(120) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_routes_tenant_name (tenant_id, name),
+        INDEX idx_routes_tenant_id (tenant_id),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+    )");
+
+    if (!table_has_column($pdo, 'loans', 'route_id')) {
+        safe_exec_schema($pdo, 'ALTER TABLE loans ADD COLUMN route_id INT NULL AFTER customer_id');
+    }
+
+    if (!table_has_index($pdo, 'loans', 'idx_loans_route')) {
+        safe_exec_schema($pdo, 'ALTER TABLE loans ADD INDEX idx_loans_route (route_id)');
+    }
+
+    if (!table_has_index($pdo, 'loans', 'idx_loans_tenant_route')) {
+        safe_exec_schema($pdo, 'ALTER TABLE loans ADD INDEX idx_loans_tenant_route (tenant_id, route_id)');
+    }
+
+    $routeFkStmt = $pdo->prepare(
+        "SELECT COUNT(*)
+         FROM information_schema.KEY_COLUMN_USAGE
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'loans'
+           AND COLUMN_NAME = 'route_id'
+           AND REFERENCED_TABLE_NAME = 'routes'
+           AND REFERENCED_COLUMN_NAME = 'id'"
+    );
+    $routeFkStmt->execute();
+    if ((int) $routeFkStmt->fetchColumn() === 0) {
+        safe_exec_schema($pdo, 'ALTER TABLE loans ADD CONSTRAINT fk_loans_route_id FOREIGN KEY (route_id) REFERENCES routes(id)');
+    }
+
+    $routePermissionKeys = ['routes.view', 'routes.create', 'routes.edit', 'routes.delete'];
+    $userRows = $pdo->query("SELECT id FROM users WHERE role IN ('superadmin', 'owner', 'manager', 'admin')")->fetchAll();
+    $existingStmt = $pdo->prepare('SELECT COUNT(*) FROM user_permissions WHERE user_id = :user_id AND permission_key IN (\'routes.view\', \'routes.create\', \'routes.edit\', \'routes.delete\')');
+    $insertStmt = $pdo->prepare(
+        'INSERT INTO user_permissions (user_id, permission_key, allowed)
+         VALUES (:user_id, :permission_key, 1)
+         ON DUPLICATE KEY UPDATE allowed = VALUES(allowed)'
+    );
+
+    foreach ($userRows as $userRow) {
+        $userId = (int) ($userRow['id'] ?? 0);
+        if ($userId <= 0) {
+            continue;
+        }
+
+        $existingStmt->execute(['user_id' => $userId]);
+        if ((int) $existingStmt->fetchColumn() > 0) {
+            continue;
+        }
+
+        foreach ($routePermissionKeys as $permissionKey) {
+            $insertStmt->execute([
+                'user_id' => $userId,
+                'permission_key' => $permissionKey,
+            ]);
+        }
+    }
+}
 function ensure_loan_assignment_schema(PDO $pdo): void
 {
     $colStmt = $pdo->query("SHOW COLUMNS FROM loans LIKE 'assigned_user_id'");
@@ -2839,11 +2925,6 @@ function ensure_loan_assignment_schema(PDO $pdo): void
     if (!$col) {
         $pdo->exec('ALTER TABLE loans ADD COLUMN assigned_user_id INT NULL AFTER customer_id');
         $pdo->exec('ALTER TABLE loans ADD INDEX idx_loans_assigned_user (assigned_user_id)');
-        $ownerId = owner_user_id($pdo);
-        if ($ownerId > 0) {
-            $stmt = $pdo->prepare('UPDATE loans SET assigned_user_id = :owner_id WHERE assigned_user_id IS NULL');
-            $stmt->execute(['owner_id' => $ownerId]);
-        }
     }
 }
 
@@ -4114,6 +4195,42 @@ function is_owner(?array $user = null): bool
     return (string) ($user['role'] ?? '') === 'superadmin' && current_tenant_id($user) === null;
 }
 
+function is_tenant_owner(?array $user = null, ?PDO $pdo = null): bool
+{
+    $user = $user ?? current_user();
+    $role = (string) ($user['role'] ?? '');
+    if (!$user || !in_array($role, ['owner', 'admin'], true)) {
+        return false;
+    }
+
+    $tenantId = current_tenant_id($user);
+    $userId = (int) ($user['id'] ?? 0);
+    if ($tenantId === null || $userId <= 0) {
+        return false;
+    }
+
+    if ($role === 'owner') {
+        return true;
+    }
+
+    try {
+        $pdo = $pdo ?? db();
+        $stmt = $pdo->prepare(
+            "SELECT id
+             FROM users
+             WHERE tenant_id = :tenant_id
+               AND role IN ('owner', 'admin')
+               AND status = 'active'
+             ORDER BY FIELD(role, 'owner', 'admin'), id ASC
+             LIMIT 1"
+        );
+        $stmt->execute(['tenant_id' => $tenantId]);
+
+        return (int) ($stmt->fetchColumn() ?: 0) === $userId;
+    } catch (Throwable) {
+        return false;
+    }
+}
 function user_permission_keys(PDO $pdo, int $userId): array
 {
     if ($userId <= 0) {
@@ -4162,9 +4279,9 @@ function owner_user_id(PDO $pdo): int
             "SELECT id
              FROM users
              WHERE tenant_id = :tenant_id
-               AND role = 'admin'
+               AND role IN ('owner', 'admin')
                AND status = 'active'
-             ORDER BY id ASC
+             ORDER BY FIELD(role, 'owner', 'admin'), id ASC
              LIMIT 1"
         );
         $stmt->execute(['tenant_id' => $tenantId]);
@@ -4182,103 +4299,6 @@ function owner_user_id(PDO $pdo): int
     );
 
     return (int) ($stmt->fetchColumn() ?: 0);
-}
-
-function default_loan_collector_id(PDO $pdo): int
-{
-    $configuredCollectorId = (int) system_setting($pdo, 'default_loan_collector_id', '0');
-    if ($configuredCollectorId <= 0) {
-        return 0;
-    }
-
-    if ($configuredCollectorId > 0 && is_assignable_collector($pdo, $configuredCollectorId)) {
-        return $configuredCollectorId;
-    }
-
-    return owner_user_id($pdo);
-}
-
-function assignable_collector_rows(PDO $pdo, ?int $includeUserId = null): array
-{
-    $includeUserId = $includeUserId !== null ? max(0, $includeUserId) : 0;
-    $tenantId = current_tenant_id();
-
-    if ($includeUserId > 0) {
-        $stmt = $pdo->prepare(
-            "SELECT id, full_name, username, role, status
-             FROM users
-             WHERE " . ($tenantId !== null ? 'tenant_id = :tenant_id AND ' : '') . "(status = 'active'
-                OR id = :include_user_id)
-             ORDER BY FIELD(role, 'superadmin', 'admin', 'collector'), full_name ASC"
-        );
-        $params = ['include_user_id' => $includeUserId];
-        if ($tenantId !== null) {
-            $params['tenant_id'] = $tenantId;
-        }
-        $stmt->execute($params);
-
-        return $stmt->fetchAll();
-    }
-
-    $stmt = $pdo->prepare(
-        "SELECT id, full_name, username, role, status
-         FROM users
-         WHERE status = 'active'
-           " . ($tenantId !== null ? 'AND tenant_id = :tenant_id' : '') . "
-         ORDER BY FIELD(role, 'superadmin', 'admin', 'collector'), full_name ASC"
-    );
-    $params = [];
-    if ($tenantId !== null) {
-        $params['tenant_id'] = $tenantId;
-    }
-    $stmt->execute($params);
-
-    return $stmt->fetchAll();
-}
-
-function assignable_collector_id_or_default(PDO $pdo, int $userId): int
-{
-    $defaultId = default_loan_collector_id($pdo);
-    if ($userId <= 0) {
-        return $defaultId;
-    }
-
-    return is_assignable_collector($pdo, $userId) ? $userId : $defaultId;
-}
-
-function is_assignable_collector(PDO $pdo, int $userId): bool
-{
-    if ($userId <= 0) {
-        return false;
-    }
-
-    $stmt = $pdo->prepare(
-        "SELECT id
-         FROM users
-         WHERE id = :id
-           AND status = 'active'
-           " . tenant_where_clause() . "
-         LIMIT 1"
-    );
-    $stmt->execute(tenant_scope_params(['id' => $userId]));
-
-    return (bool) $stmt->fetch();
-}
-
-function fallback_loan_assignments_to_owner(PDO $pdo, int $fromUserId): int
-{
-    $ownerId = default_loan_collector_id($pdo);
-    if ($fromUserId <= 0 || $ownerId <= 0 || $fromUserId === $ownerId) {
-        return 0;
-    }
-
-    $stmt = $pdo->prepare('UPDATE loans SET assigned_user_id = :owner_id WHERE assigned_user_id = :from_user_id' . tenant_where_clause());
-    $stmt->execute(tenant_scope_params([
-        'owner_id' => $ownerId,
-        'from_user_id' => $fromUserId,
-    ]));
-
-    return (int) $stmt->rowCount();
 }
 
 function render_permission_fields(array $selectedKeys, bool $disabled = false): void
@@ -4341,34 +4361,29 @@ function render_permission_fields(array $selectedKeys, bool $disabled = false): 
             </section>
         <?php endforeach; ?>
     </div>
+
     <script>
     (() => {
         document.querySelectorAll('[data-permission-panel]').forEach((panel) => {
-            if (panel.dataset.permissionLocked === '1') {
-                return;
-            }
+            const isLocked = panel.dataset.permissionLocked === '1';
+            const form = panel.closest('form');
+            const inputs = Array.from(panel.querySelectorAll('input[data-permission-key]'));
+            const byKey = new Map(inputs.map((input) => [input.dataset.permissionKey, input]));
 
             const syncDependentPermissions = () => {
-                panel.querySelectorAll('input[data-permission-depends-on]').forEach((input) => {
-                    const dependencies = (input.dataset.permissionDependsOn || '').split(/\s+/).filter(Boolean);
-                    const allowed = dependencies.every((dependency) => {
-                        const dependencyInput = Array.from(panel.querySelectorAll('input[data-permission-key]'))
-                            .find((candidate) => candidate.dataset.permissionKey === dependency);
-                        return dependencyInput && dependencyInput.checked;
-                    });
-                    const row = input.closest('[data-permission-row]');
-
-                    if (!allowed) {
+                inputs.forEach((input) => {
+                    const dependencies = (input.dataset.permissionDependsOn || '').split(' ').filter(Boolean);
+                    const dependencyBlocked = dependencies.some((key) => !byKey.get(key)?.checked);
+                    input.disabled = isLocked || dependencyBlocked;
+                    input.closest('[data-permission-row]')?.classList.toggle('is-disabled', dependencyBlocked);
+                    if (dependencyBlocked) {
                         input.checked = false;
                     }
-
-                    input.disabled = !allowed;
-                    row?.classList.toggle('is-disabled', !allowed);
                 });
             };
 
             syncDependentPermissions();
-            panel.closest('form')?.addEventListener('change', () => {
+            form?.addEventListener('change', () => {
                 window.setTimeout(syncDependentPermissions, 0);
             });
         });
@@ -4376,7 +4391,6 @@ function render_permission_fields(array $selectedKeys, bool $disabled = false): 
     </script>
     <?php
 }
-
 function can(string $permissionKey, ?array $viewer = null): bool
 {
     $viewer = $viewer ?? current_user();
@@ -4386,6 +4400,10 @@ function can(string $permissionKey, ?array $viewer = null): bool
 
     if ($permissionKey === 'backup.manage' && !is_owner($viewer)) {
         return false;
+    }
+
+    if ($permissionKey === 'system_settings.manage' && is_tenant_owner($viewer)) {
+        return true;
     }
 
     if (is_owner($viewer)) {
@@ -4448,14 +4466,63 @@ function is_collector_role(?string $role): bool
     return (string) $role === 'collector';
 }
 
-function collector_assignment_scope_sql(string $loanAlias = 'l', string $paramName = 'assigned_user_id'): string
+
+function route_options(PDO $pdo): array
 {
-    return '(' . $loanAlias . '.assigned_user_id = :' . $paramName . ' OR ' . $loanAlias . '.assigned_user_id IS NULL)';
+    $stmt = $pdo->prepare('SELECT id, name FROM routes WHERE ' . tenant_scope_sql() . ' ORDER BY name ASC, id ASC');
+    $stmt->execute(tenant_scope_params());
+
+    return $stmt->fetchAll();
 }
 
-function can_view_all_customers(?array $viewer = null): bool
+function route_exists(PDO $pdo, int $routeId): bool
 {
-    return can('customers.view_all', $viewer);
+    if ($routeId <= 0) {
+        return false;
+    }
+
+    $stmt = $pdo->prepare('SELECT 1 FROM routes WHERE id = :id AND ' . tenant_scope_sql() . ' LIMIT 1');
+    $stmt->execute(tenant_scope_params(['id' => $routeId]));
+
+    return (bool) $stmt->fetchColumn();
+}
+
+function route_name_exists(PDO $pdo, string $name, ?int $excludeRouteId = null): bool
+{
+    $name = trim($name);
+    if ($name === '') {
+        return false;
+    }
+
+    $sql = 'SELECT 1 FROM routes WHERE name = :name AND ' . tenant_scope_sql();
+    $params = tenant_scope_params(['name' => $name]);
+    if ($excludeRouteId !== null && $excludeRouteId > 0) {
+        $sql .= ' AND id <> :exclude_id';
+        $params['exclude_id'] = $excludeRouteId;
+    }
+    $sql .= ' LIMIT 1';
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+
+    return (bool) $stmt->fetchColumn();
+}
+
+function route_loan_count(PDO $pdo, int $routeId): int
+{
+    if ($routeId <= 0) {
+        return 0;
+    }
+
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM loans WHERE route_id = :route_id AND ' . tenant_scope_sql());
+    $stmt->execute(tenant_scope_params(['route_id' => $routeId]));
+
+    return (int) $stmt->fetchColumn();
+}
+
+function normalize_route_id(PDO $pdo, int $routeId): ?int
+{
+    return $routeId > 0 && route_exists($pdo, $routeId) ? $routeId : null;
 }
 
 function can_access_customer(PDO $pdo, int $customerId, ?array $viewer = null): bool
@@ -4465,47 +4532,12 @@ function can_access_customer(PDO $pdo, int $customerId, ?array $viewer = null): 
     }
 
     $viewer = $viewer ?? current_user();
-    if (!$viewer) {
+    if (!$viewer || !can('customers.view', $viewer)) {
         return false;
     }
 
-    if (!can('customers.view', $viewer)) {
-        return false;
-    }
-
-    if (can_view_all_customers($viewer) || is_owner($viewer)) {
-        return true;
-    }
-
-    $viewerId = (int) ($viewer['id'] ?? 0);
-    if ($viewerId <= 0) {
-        return false;
-    }
-
-    $stmt = $pdo->prepare(
-        "SELECT 1
-         FROM customers c
-         WHERE c.id = :customer_id
-           " . tenant_where_clause('c') . "
-           AND (
-                EXISTS (
-                    SELECT 1
-                    FROM loans l_assigned
-                    WHERE l_assigned.customer_id = c.id
-                      AND " . collector_assignment_scope_sql('l_assigned', 'viewer_user_id') . "
-                )
-                OR NOT EXISTS (
-                    SELECT 1
-                    FROM loans l_any
-                    WHERE l_any.customer_id = c.id
-                )
-           )
-         LIMIT 1"
-    );
-    $stmt->execute([
-        'customer_id' => $customerId,
-        'viewer_user_id' => $viewerId,
-    ] + tenant_scope_params());
+    $stmt = $pdo->prepare("SELECT 1 FROM customers c WHERE c.id = :customer_id " . tenant_where_clause('c') . " LIMIT 1");
+    $stmt->execute(['customer_id' => $customerId] + tenant_scope_params());
 
     return (bool) $stmt->fetchColumn();
 }
@@ -4530,7 +4562,6 @@ function today_collection_goal(PDO $pdo, ?array $viewer = null): array
 {
     $viewerRole = (string) ($viewer['role'] ?? '');
     $viewerId = (int) ($viewer['id'] ?? 0);
-    $isCollectorScope = is_collector_role($viewerRole) && $viewerId > 0;
     $todayDate = today();
     $tenantId = current_tenant_id($viewer);
 
@@ -4559,10 +4590,6 @@ function today_collection_goal(PDO $pdo, ?array $viewer = null): array
         'today_due_date' => $todayDate,
     ];
 
-    if ($isCollectorScope) {
-        $paidTargetSql .= ' AND ' . collector_assignment_scope_sql('l', 'viewer_user_id');
-        $paidTargetParams['viewer_user_id'] = $viewerId;
-    }
     if ($tenantId !== null) {
         $paidTargetSql .= ' AND l.tenant_id = :tenant_id';
         $paidTargetParams['tenant_id'] = $tenantId;
@@ -4605,42 +4632,19 @@ function today_collection_goal(PDO $pdo, ?array $viewer = null): array
 
 function today_collected_total(PDO $pdo, ?array $viewer = null): float
 {
-    $viewerRole = (string) ($viewer['role'] ?? '');
-    $viewerId = (int) ($viewer['id'] ?? 0);
-    $isCollectorScope = is_collector_role($viewerRole) && $viewerId > 0;
     $todayDate = today();
     $tenantId = current_tenant_id($viewer);
+    $sql = 'SELECT COALESCE(SUM(amount), 0) FROM collections WHERE collected_on = :today';
+    $params = ['today' => $todayDate];
 
-    if (!$isCollectorScope) {
-        $sql = 'SELECT COALESCE(SUM(amount), 0) FROM collections WHERE collected_on = :today';
-        $params = ['today' => $todayDate];
-        if ($tenantId !== null) {
-            $sql .= ' AND tenant_id = :tenant_id';
-            $params['tenant_id'] = $tenantId;
-        }
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute($params);
-        return (float) $stmt->fetchColumn();
-    }
-
-    $scope = collector_assignment_scope_sql('l', 'viewer_user_id');
-    $params = [
-        'today' => $todayDate,
-        'viewer_user_id' => $viewerId,
-    ];
     if ($tenantId !== null) {
-        $scope .= ' AND l.tenant_id = :tenant_id';
+        $sql .= ' AND tenant_id = :tenant_id';
         $params['tenant_id'] = $tenantId;
     }
 
-    $stmt = $pdo->prepare(
-        "SELECT COALESCE(SUM(c.amount), 0)
-         FROM collections c
-         JOIN loans l ON l.id = c.loan_id
-         WHERE c.collected_on = :today
-           AND {$scope}"
-    );
+    $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
+
     return (float) $stmt->fetchColumn();
 }
 
@@ -4676,7 +4680,6 @@ function collections_total_chart(PDO $pdo, ?array $viewer = null, string $mode =
     $today = new DateTimeImmutable(today());
     $viewerRole = (string) ($viewer['role'] ?? '');
     $viewerId = (int) ($viewer['id'] ?? 0);
-    $isCollectorScope = is_collector_role($viewerRole) && $viewerId > 0;
     $tenantId = current_tenant_id($viewer);
 
     if ($mode === 'weekly') {
@@ -4735,15 +4738,7 @@ function collections_total_chart(PDO $pdo, ?array $viewer = null, string $mode =
         'end_date' => $endDate->format('Y-m-d'),
     ];
 
-    if ($isCollectorScope) {
-        $joins = ' JOIN loans l ON l.id = c.loan_id';
-        $scope = ' AND ' . collector_assignment_scope_sql('l', 'viewer_user_id');
-        $params['viewer_user_id'] = $viewerId;
-        if ($tenantId !== null) {
-            $scope .= ' AND l.tenant_id = :tenant_id';
-            $params['tenant_id'] = $tenantId;
-        }
-    } elseif ($tenantId !== null) {
+    if ($tenantId !== null) {
         $scope = ' AND c.tenant_id = :tenant_id';
         $params['tenant_id'] = $tenantId;
     }
@@ -4874,70 +4869,38 @@ function dashboard_collection_chart_html(PDO $pdo, array $chart, string $mode): 
 
 function dashboard_user_goals(PDO $pdo, ?array $viewer = null): array
 {
-    $viewerRole = (string) ($viewer['role'] ?? '');
-    $viewerId = (int) ($viewer['id'] ?? 0);
-    $isCollectorScope = is_collector_role($viewerRole) && $viewerId > 0;
     $tenantId = current_tenant_id($viewer);
     $tenantScope = $tenantId !== null ? ' AND l.tenant_id = :tenant_id' : '';
 
-    if ($isCollectorScope) {
-        $collectedStmt = $pdo->prepare(
-            "SELECT
-                u.id,
-                u.full_name,
-                u.username,
-                u.role,
-                COALESCE(SUM(c.amount), 0) AS collected
-             FROM collections c
-             JOIN users u ON u.id = c.collected_by_user_id
-             JOIN loans l ON l.id = c.loan_id
-             WHERE c.collected_on = CURDATE()
-               AND c.collected_by_user_id = :collector_user_id
-               AND " . collector_assignment_scope_sql('l', 'viewer_user_id') . "
-               {$tenantScope}
-             GROUP BY u.id, u.full_name, u.username, u.role
-             HAVING collected > 0
-             ORDER BY collected DESC, u.full_name ASC"
-        );
-        $params = [
-            'collector_user_id' => $viewerId,
-            'viewer_user_id' => $viewerId,
-        ];
-        if ($tenantId !== null) {
-            $params['tenant_id'] = $tenantId;
-        }
-        $collectedStmt->execute($params);
-    } else {
-        $collectedStmt = $pdo->prepare(
-            "SELECT
-                u.id,
-                u.full_name,
-                u.username,
-                u.role,
-                COALESCE(SUM(c.amount), 0) AS collected
-             FROM collections c
-             JOIN users u ON u.id = c.collected_by_user_id
-             JOIN loans l ON l.id = c.loan_id
-             WHERE c.collected_on = CURDATE()
-               {$tenantScope}
-             GROUP BY u.id, u.full_name, u.username, u.role
-             HAVING collected > 0
-             ORDER BY collected DESC, u.full_name ASC"
-        );
-        $params = [];
-        if ($tenantId !== null) {
-            $params['tenant_id'] = $tenantId;
-        }
-        $collectedStmt->execute($params);
+    $collectedStmt = $pdo->prepare(
+        "SELECT
+            u.id,
+            u.full_name,
+            u.username,
+            u.role,
+            COALESCE(SUM(c.amount), 0) AS collected
+         FROM collections c
+         JOIN users u ON u.id = c.collected_by_user_id
+         JOIN loans l ON l.id = c.loan_id
+         WHERE c.collected_on = CURDATE()
+           {$tenantScope}
+         GROUP BY u.id, u.full_name, u.username, u.role
+         HAVING collected > 0
+         ORDER BY collected DESC, u.full_name ASC"
+    );
+    $params = [];
+    if ($tenantId !== null) {
+        $params['tenant_id'] = $tenantId;
     }
+    $collectedStmt->execute($params);
 
     $users = $collectedStmt ? $collectedStmt->fetchAll() : [];
-    $users = array_map(static function (array $user): array {
+    $users = array_map(static function (array $user) use ($pdo): array {
         return [
             'id' => (int) $user['id'],
             'full_name' => (string) $user['full_name'],
             'role' => (string) $user['role'],
-            'role_label' => role_display_name((string) $user['role']),
+            'role_label' => user_role_display_name($user, $pdo),
             'collected' => (float) $user['collected'],
         ];
     }, $users);

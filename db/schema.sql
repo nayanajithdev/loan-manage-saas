@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(80) NOT NULL UNIQUE,
     email VARCHAR(190) NULL,
     password_hash VARCHAR(255) NOT NULL,
-    role ENUM('superadmin', 'admin', 'collector') NOT NULL DEFAULT 'admin',
+    role ENUM('superadmin', 'owner', 'manager', 'collector') NOT NULL DEFAULT 'manager',
+    owner_tenant_unique_key INT GENERATED ALWAYS AS (CASE WHEN role = 'owner' THEN tenant_id ELSE NULL END) STORED,
     status ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
     force_logout_at DATETIME NULL,
     avatar_path VARCHAR(255) DEFAULT NULL,
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS users (
     INDEX idx_users_tenant_id (tenant_id),
     INDEX idx_users_role (role),
     INDEX idx_users_status (status),
+    UNIQUE KEY uq_users_one_owner_per_tenant (owner_tenant_unique_key),
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
     UNIQUE KEY uq_users_email (email)
 );
@@ -95,11 +97,23 @@ CREATE TABLE IF NOT EXISTS customers (
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS routes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tenant_id INT NOT NULL,
+    name VARCHAR(120) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_routes_tenant_name (tenant_id, name),
+    INDEX idx_routes_tenant_id (tenant_id),
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS loans (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tenant_id INT NOT NULL,
     loan_number VARCHAR(40) NOT NULL,
     customer_id INT NOT NULL,
+    route_id INT DEFAULT NULL,
     assigned_user_id INT DEFAULT NULL,
     issued_date DATE DEFAULT NULL,
     principal_amount DECIMAL(12,2) NOT NULL,
@@ -118,9 +132,12 @@ CREATE TABLE IF NOT EXISTS loans (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_loans_tenant_number (tenant_id, loan_number),
     INDEX idx_loans_tenant_status (tenant_id, status),
+    INDEX idx_loans_tenant_route (tenant_id, route_id),
+    INDEX idx_loans_route (route_id),
     INDEX idx_loans_assigned_user (assigned_user_id),
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
     FOREIGN KEY (customer_id) REFERENCES customers(id),
+    FOREIGN KEY (route_id) REFERENCES routes(id),
     FOREIGN KEY (assigned_user_id) REFERENCES users(id)
 );
 

@@ -36,12 +36,14 @@ if (!$editUser) {
 }
 
 $current = current_user();
+$tenantOwnerId = owner_user_id($pdo);
 $isSelf = $current && (
     (int) ($current['id'] ?? 0) === (int) $editUser['id']
     || ((string) ($current['username'] ?? '') !== '' && (string) $current['username'] === (string) $editUser['username'])
     || ((string) ($current['email'] ?? '') !== '' && (string) ($current['email'] ?? '') === (string) ($editUser['email'] ?? ''))
 );
 $isTargetSuperadmin = (string) $editUser['role'] === 'superadmin';
+$isTargetTenantOwner = (string) $editUser['role'] === 'owner' || ((string) $editUser['role'] === 'admin' && (int) $editUser['id'] === $tenantOwnerId);
 $currentIsOwner = is_owner($current);
 
 if ($isSelf && !$currentIsOwner) {
@@ -49,9 +51,15 @@ if ($isSelf && !$currentIsOwner) {
     redirect('pages/users.php');
 }
 
-$canDelete = !$isSelf && !$isTargetSuperadmin;
-$canChangeRole = !$isTargetSuperadmin;
-$canChangeStatus = $currentIsOwner && !$isTargetSuperadmin && !$isSelf;
+if ($isTargetTenantOwner && !$currentIsOwner) {
+    set_flash('error', 'Business owner account cannot be edited from user management.');
+    redirect('pages/users.php');
+}
+
+$canDelete = !$isSelf && !$isTargetSuperadmin && !$isTargetTenantOwner;
+$canChangeRole = !$isTargetSuperadmin && !$isTargetTenantOwner;
+$canChangeStatus = $currentIsOwner && !$isTargetSuperadmin && !$isTargetTenantOwner && !$isSelf;
+$permissionsLocked = $isTargetSuperadmin || $isTargetTenantOwner;
 $editPermissions = $isTargetSuperadmin ? permission_keys() : user_permission_keys($pdo, (int) $editUser['id']);
 
 require __DIR__ . '/../includes/layout_start.php';
@@ -98,9 +106,12 @@ require __DIR__ . '/../includes/layout_start.php';
                     <select name="role" <?= $canChangeRole ? '' : 'disabled' ?>>
                         <?php if ((string) $editUser['role'] === 'superadmin'): ?>
                             <option value="superadmin" selected>SaaS Admin</option>
+                        <?php elseif ($isTargetTenantOwner): ?>
+                            <option value="owner" selected>Owner</option>
+                        <?php else: ?>
+                            <option value="manager" <?= in_array((string) $editUser['role'], ['manager', 'admin'], true) ? 'selected' : '' ?>>Manager</option>
+                            <option value="collector" <?= (string) $editUser['role'] === 'collector' ? 'selected' : '' ?>>Collector</option>
                         <?php endif; ?>
-                        <option value="admin" <?= (string) $editUser['role'] === 'admin' ? 'selected' : '' ?>>Owner</option>
-                        <option value="collector" <?= (string) $editUser['role'] === 'collector' ? 'selected' : '' ?>>Collector</option>
                     </select>
                     <?php if (!$canChangeRole): ?>
                         <input type="hidden" name="role" value="<?= e((string) $editUser['role']) ?>">
@@ -116,7 +127,7 @@ require __DIR__ . '/../includes/layout_start.php';
                         <input type="hidden" name="status" value="<?= e((string) $editUser['status']) ?>">
                     <?php endif; ?>
                     <?php if (!$currentIsOwner): ?>
-                        <small>Only owner can change user active/inactive.</small>
+                        <small>Only Business Owner can change user active/inactive.</small>
                     <?php endif; ?>
                 </div>
                 <div class="field">
@@ -131,7 +142,7 @@ require __DIR__ . '/../includes/layout_start.php';
         </section>
 
         <section class="panel user-permissions-panel">
-            <?php render_permission_fields($editPermissions, $isTargetSuperadmin); ?>
+            <?php render_permission_fields($editPermissions, $permissionsLocked); ?>
         </section>
     </div>
 </form>
@@ -145,8 +156,10 @@ require __DIR__ . '/../includes/layout_start.php';
         <button type="submit" class="btn btn-danger" <?= $canDelete ? '' : 'disabled' ?>>Delete User</button>
         <?php if ($isSelf): ?>
             <small>You cannot delete your own logged-in account.</small>
+        <?php elseif ($isTargetTenantOwner): ?>
+            <small>Business owner cannot be deleted.</small>
         <?php elseif ($isTargetSuperadmin): ?>
-            <small>Owner cannot be deleted.</small>
+            <small>SaaS Admin cannot be deleted.</small>
         <?php endif; ?>
     </form>
 </div>

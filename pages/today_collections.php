@@ -108,24 +108,8 @@ $canUndoSelectedCollection = $canUndoCollection && $hasSelectedCollection && $se
 $canUseBackdatedEntryForSelection = $hasSelectedInstallment && !$isFutureInstallmentSelected && !$isTodayInstallmentSelected;
 $effectiveCollectedOn = $isFutureDate ? $todayDate : $selectedDate;
 
-if (is_collector_role($currentRole)) {
-    $selectedCollectionTotalStmt = $pdo->prepare(
-        "SELECT COALESCE(SUM(col.amount), 0)
-         FROM collections col
-         JOIN loans l ON l.id = col.loan_id
-         WHERE col.collected_on = :selected_date
-           AND " . collector_assignment_scope_sql('l', 'assigned_user_id')
-           . " AND " . tenant_scope_sql('l')
-    );
-    $selectedCollectionTotalStmt->execute(tenant_scope_params([
-        'selected_date' => $selectedDate,
-        'assigned_user_id' => $currentUserId,
-    ]));
-} else {
-    $selectedCollectionTotalStmt = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) FROM collections WHERE collected_on = :selected_date AND ' . tenant_scope_sql());
-    $selectedCollectionTotalStmt->execute(tenant_scope_params(['selected_date' => $selectedDate]));
-}
-$selectedCollectionTotal = (float) $selectedCollectionTotalStmt->fetchColumn();
+$selectedCollectionTotalStmt = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) FROM collections WHERE collected_on = :selected_date AND ' . tenant_scope_sql());
+$selectedCollectionTotalStmt->execute(tenant_scope_params(['selected_date' => $selectedDate]));$selectedCollectionTotal = (float) $selectedCollectionTotalStmt->fetchColumn();
 $nextPaymentDefault = $tomorrowDate;
 if ($hasSelectedInstallment) {
     try {

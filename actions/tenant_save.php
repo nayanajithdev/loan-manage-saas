@@ -7,9 +7,9 @@ require_once __DIR__ . '/../includes/bootstrap.php';
 require_platform_owner('pages/tenants.php');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    redirect('pages/tenants.php');
+    redirect('pages/tenant_create.php');
 }
-require_csrf('pages/tenants.php');
+require_csrf('pages/tenant_create.php');
 
 $name = trim((string) ($_POST['name'] ?? ''));
 $slug = trim((string) ($_POST['slug'] ?? ''));
@@ -20,20 +20,35 @@ $username = trim((string) ($_POST['username'] ?? ''));
 $password = (string) ($_POST['password'] ?? '');
 $status = trim((string) ($_POST['status'] ?? 'pending'));
 $notes = trim((string) ($_POST['notes'] ?? ''));
+$rememberTenantCreateInput = static function () use (&$name, &$slug, &$ownerName, &$ownerEmail, &$phone, &$username, &$status, &$notes): void {
+    $_SESSION['tenant_create_old_input'] = [
+        'name' => $name,
+        'slug' => $slug,
+        'owner_name' => $ownerName,
+        'owner_email' => $ownerEmail,
+        'phone' => $phone,
+        'username' => $username,
+        'status' => $status,
+        'notes' => $notes,
+    ];
+};
 
 if ($name === '' || $ownerName === '' || $ownerEmail === '' || $username === '' || $password === '') {
+    $rememberTenantCreateInput();
     set_flash('error', 'Tenant name, owner details, username, and password are required.');
-    redirect('pages/tenants.php');
+    redirect('pages/tenant_create.php');
 }
 
 if (!filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) {
+    $rememberTenantCreateInput();
     set_flash('error', 'Please enter a valid owner email.');
-    redirect('pages/tenants.php');
+    redirect('pages/tenant_create.php');
 }
 
 if (strlen($password) < 6) {
+    $rememberTenantCreateInput();
     set_flash('error', 'Password must be at least 6 characters.');
-    redirect('pages/tenants.php');
+    redirect('pages/tenant_create.php');
 }
 
 if (!in_array($status, ['pending', 'approved'], true)) {
@@ -45,8 +60,9 @@ $slug = $slug !== '' ? tenant_slug_from_name($slug) : tenant_slug_from_name($nam
 $existsStmt = $pdo->prepare('SELECT id FROM tenants WHERE slug = :slug LIMIT 1');
 $existsStmt->execute(['slug' => $slug]);
 if ($existsStmt->fetch()) {
+    $rememberTenantCreateInput();
     set_flash('error', 'Tenant slug already exists.');
-    redirect('pages/tenants.php');
+    redirect('pages/tenant_create.php');
 }
 
 $userStmt = $pdo->prepare('SELECT id FROM users WHERE username = :username OR email = :email LIMIT 1');
@@ -55,8 +71,9 @@ $userStmt->execute([
     'email' => $ownerEmail,
 ]);
 if ($userStmt->fetch()) {
-    set_flash('error', 'Admin username or owner email already exists.');
-    redirect('pages/tenants.php');
+    $rememberTenantCreateInput();
+    set_flash('error', 'Owner username or owner email already exists.');
+    redirect('pages/tenant_create.php');
 }
 
 $pdo->beginTransaction();
@@ -87,11 +104,11 @@ try {
         'username' => $username,
         'email' => $ownerEmail,
         'password_hash' => password_hash($password, PASSWORD_DEFAULT),
-        'role' => 'admin',
+        'role' => 'owner',
         'status' => 'active',
     ]);
     $adminUserId = (int) $pdo->lastInsertId();
-    sync_user_permissions($pdo, $adminUserId, role_default_permissions('admin'));
+    sync_user_permissions($pdo, $adminUserId, role_default_permissions('owner'));
 
     $settingsStmt = $pdo->prepare(
         'INSERT INTO system_settings (tenant_id, setting_key, setting_value, updated_by_user_id)
@@ -112,8 +129,9 @@ try {
     $pdo->commit();
 } catch (Throwable $e) {
     $pdo->rollBack();
+    $rememberTenantCreateInput();
     set_flash('error', 'Failed to create tenant.');
-    redirect('pages/tenants.php');
+    redirect('pages/tenant_create.php');
 }
 
 log_activity($pdo, 'tenant.created', 'Tenant created: ' . $name . '.', [
@@ -122,5 +140,6 @@ log_activity($pdo, 'tenant.created', 'Tenant created: ' . $name . '.', [
     'status' => $status,
 ]);
 
+unset($_SESSION['tenant_create_old_input']);
 set_flash('success', 'Tenant created successfully.');
 redirect('pages/tenants.php');

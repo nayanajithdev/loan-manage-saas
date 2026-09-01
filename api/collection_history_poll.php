@@ -22,10 +22,6 @@ $paymentMethodSelectionEnabled = payment_method_selection_enabled($pdo);
 
 $scopeSql = ' WHERE ' . tenant_scope_sql('l');
 $params = tenant_scope_params();
-if (is_collector_role($currentRole)) {
-    $scopeSql .= ' AND ' . collector_assignment_scope_sql('l', 'assigned_user_id');
-    $params['assigned_user_id'] = $currentUserId;
-}
 
 $legacyCustomerFilterSql = '';
 if ($selectedCustomerId > 0) {

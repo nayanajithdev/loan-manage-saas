@@ -13,7 +13,7 @@ require_tenant_context();
 
 $pageTitle = 'Create User';
 $activePage = 'users';
-$createDefaultPermissions = role_default_permissions('admin');
+$createDefaultPermissions = role_default_permissions('manager');
 
 require __DIR__ . '/../includes/layout_start.php';
 ?>
@@ -46,7 +46,7 @@ require __DIR__ . '/../includes/layout_start.php';
         <div class="field">
             <label>Role</label>
             <select name="role" required data-permission-role-select>
-                <option value="admin">Owner</option>
+                <option value="manager">Manager</option>
                 <option value="collector">Collector</option>
             </select>
         </div>
@@ -69,7 +69,7 @@ require __DIR__ . '/../includes/layout_start.php';
 <script>
 (() => {
     const defaults = <?= json_encode([
-        'admin' => role_default_permissions('admin'),
+        'manager' => role_default_permissions('manager'),
         'collector' => role_default_permissions('collector'),
     ], JSON_THROW_ON_ERROR) ?>;
 

@@ -17,6 +17,7 @@ require_csrf('pages/loan_create.php');
 $loanNumberInput = trim((string) ($_POST['loan_number'] ?? ''));
 $loanNumber = normalize_loan_number_input($loanNumberInput);
 $customerId = (int) ($_POST['customer_id'] ?? 0);
+$routeIdInput = (int) ($_POST['route_id'] ?? 0);
 $issuedDate = trim((string) ($_POST['issued_date'] ?? today()));
 $firstPaymentDateInput = trim((string) ($_POST['first_payment_date'] ?? ''));
 $principal = (float) ($_POST['principal_amount'] ?? 0);
@@ -28,13 +29,10 @@ $timeframeValue = (int) ($_POST['timeframe_value'] ?? 0);
 $timeframeUnit = trim((string) ($_POST['timeframe_unit'] ?? 'days'));
 $roundedInstallmentAmount = round((float) ($_POST['rounded_installment_amount'] ?? 0), 2);
 $useRoundedInstallment = ((int) ($_POST['use_rounded_installment'] ?? 0) === 1) || $roundedInstallmentAmount > 0;
-$canAssignLoan = can('loans.assign');
 $canCreateCustomer = can('customers.create');
-$postedAssignedUserId = (int) ($_POST['assigned_user_id'] ?? 0);
 $tenantId = require_tenant_context('pages/loans.php');
-$assignedUserId = $canAssignLoan
-    ? ($postedAssignedUserId > 0 ? assignable_collector_id_or_default($pdo, $postedAssignedUserId) : null)
-    : default_loan_collector_id($pdo);
+$assignedUserId = null;
+$routeId = normalize_route_id($pdo, $routeIdInput);
 $notes = trim((string) ($_POST['notes'] ?? ''));
 $createNewCustomer = (string) ($_POST['create_new_customer'] ?? '0') === '1';
 $newCustomerFullName = trim((string) ($_POST['new_customer_full_name'] ?? ''));
@@ -43,6 +41,10 @@ $newCustomerNic = trim((string) ($_POST['new_customer_nic'] ?? ''));
 $newCustomerAddress = trim((string) ($_POST['new_customer_address'] ?? ''));
 $newCustomerNote = trim((string) ($_POST['new_customer_note'] ?? ''));
 
+if ($routeIdInput > 0 && $routeId === null) {
+    set_flash('error', 'Selected route is not available.');
+    redirect('pages/loan_create.php');
+}
 if ($loanNumber === '' || (int) ltrim($loanNumber, '0') <= 0) {
     set_flash('error', 'Loan No must be a positive number.');
     redirect('pages/loan_create.php');
@@ -125,10 +127,7 @@ if (!$createNewCustomer) {
     }
 }
 
-if ($assignedUserId !== null && $assignedUserId <= 0) {
-    set_flash('error', 'Owner account is required before creating loans.');
-    redirect('pages/loan_create.php');
-}
+
 
 $totalAmount = loan_total_amount($principal, $interestRate, $interestRateType, $interestRateMonths);
 if ($useRoundedInstallment) {
@@ -180,6 +179,7 @@ try {
             tenant_id,
             loan_number,
             customer_id,
+            route_id,
             assigned_user_id,
             issued_date,
             principal_amount,
@@ -197,6 +197,7 @@ try {
             :tenant_id,
             :loan_number,
             :customer_id,
+            :route_id,
             :assigned_user_id,
             :issued_date,
             :principal_amount,
@@ -217,6 +218,7 @@ try {
         'tenant_id' => $tenantId,
         'loan_number' => $loanNumber,
         'customer_id' => $customerId,
+        'route_id' => $routeId,
         'assigned_user_id' => $assignedUserId,
         'issued_date' => $issuedDate,
         'principal_amount' => $principal,
@@ -282,7 +284,7 @@ try {
     log_activity($pdo, 'loan.created', 'Loan created: ' . $loanNumber . '.', [
         'loan_id' => $loanId,
         'customer_id' => $customerId,
-        'assigned_user_id' => $assignedUserId,
+        'route_id' => $routeId,
         'issued_date' => $issuedDate,
         'principal_amount' => $principal,
         'interest_rate_type' => $interestRateType,

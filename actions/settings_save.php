@@ -3,7 +3,11 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/bootstrap.php';
+if (is_owner()) {
+    redirect('pages/tenants.php');
+}
 require_permission('business_settings.manage', 'pages/settings.php');
+require_tenant_context('pages/settings.php');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect('pages/settings.php');

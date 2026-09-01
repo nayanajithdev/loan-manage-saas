@@ -7,9 +7,29 @@
 </IfModule>
 
 Options -Indexes
+<FilesMatch "^(\.env.*|\.gitignore|README\.md|composer\.(json|lock)|package(-lock)?\.json)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+<FilesMatch "\.(sql|bak|zip|tar|gz|7z|log)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
+  RewriteRule ^(\.git|db)(/|$) - [R=404,L]
   RewriteRule ^f3fd7t3/?$ f3fd7t3.php [L]
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d

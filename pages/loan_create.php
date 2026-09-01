@@ -12,15 +12,10 @@ require_tenant_context();
 $pageTitle = 'Create Loan';
 $activePage = 'loans';
 $canCreateCustomer = can('customers.create');
-$canAssignLoan = can('loans.assign');
-
 $customerStmt = $pdo->prepare("SELECT id, customer_code, full_name, nic FROM customers WHERE status = 'active' AND " . tenant_scope_sql() . " ORDER BY full_name ASC");
 $customerStmt->execute(tenant_scope_params());
 $customers = $customerStmt->fetchAll();
-$collectors = $canAssignLoan
-    ? assignable_collector_rows($pdo)
-    : [];
-$defaultCollectorId = default_loan_collector_id($pdo);
+$routes = route_options($pdo);
 $defaultInterestRate = system_setting($pdo, 'default_interest_rate', '0.00');
 $defaultInterestRateType = 'monthly';
 $defaultInterestRateMonths = normalize_interest_rate_months((int) system_setting($pdo, 'default_interest_rate_months', '1'));
@@ -144,6 +139,14 @@ require __DIR__ . '/../includes/layout_start.php';
                         </div>
                     </div>
                     <div class="field">
+                        <label>Route</label>
+                        <select name="route_id">
+                            <option value="0">No route</option>
+                            <?php foreach ($routes as $route): ?>
+                                <option value="<?= e((string) $route['id']) ?>"><?= e((string) $route['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>                    <div class="field">
                         <label>Loan Issued Date</label>
                         <input type="date" name="issued_date" value="<?= e($defaultIssuedDate) ?>" required>
                     </div>
@@ -184,20 +187,6 @@ require __DIR__ . '/../includes/layout_start.php';
                             </select>
                         </div>
                     </div>
-                    <?php if ($canAssignLoan): ?>
-                        <div class="field">
-                            <label>Assign Loan To Collector</label>
-                            <select name="assigned_user_id" required>
-                                <option value="0">All users</option>
-                                <?php foreach ($collectors as $collector): ?>
-                                    <?php $collectorId = (int) $collector['id']; ?>
-                                    <option value="<?= e((string) $collectorId) ?>" <?= $collectorId === $defaultCollectorId ? 'selected' : '' ?>>
-                                        <?= e($collector['full_name'] . ' (' . $collector['username'] . ' - ' . role_display_name((string) $collector['role']) . ')') ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                    <?php endif; ?>
                     <div class="loan-form-divider">Installment Options</div>
                     <div class="field loan-schedule-field">
                         <label>Schedule First Payment</label>
