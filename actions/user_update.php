@@ -104,6 +104,7 @@ $isTargetTenantOwner = $targetRole === 'owner' || ($targetRole === 'admin' && $u
 $isSelf = (int) ($current['id'] ?? 0) === $userId
     || ((string) ($current['username'] ?? '') !== '' && (string) $current['username'] === (string) $targetUser['username'])
     || ((string) ($current['email'] ?? '') !== '' && (string) ($current['email'] ?? '') === (string) ($targetUser['email'] ?? ''));
+$currentCanChangeStatus = is_owner($current) || is_tenant_owner($current, $pdo);
 
 if ($isSelf && !is_owner($current)) {
     set_flash('error', 'Owners cannot edit their own account from user management. Use Profile for personal account changes.');
@@ -131,7 +132,7 @@ if (!is_owner($current) && $targetRole === 'superadmin') {
     redirect('pages/users.php');
 }
 
-if (!is_owner($current)) {
+if (!$currentCanChangeStatus) {
     $status = (string) $targetUser['status'];
 }
 if (!in_array($status, ['active', 'inactive'], true)) {

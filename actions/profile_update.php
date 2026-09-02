@@ -20,7 +20,7 @@ $fullNameInput = trim((string) ($_POST['full_name'] ?? ''));
 $usernameInput = trim((string) ($_POST['username'] ?? ''));
 $emailInput = mb_strtolower(trim((string) ($_POST['email'] ?? '')));
 
-$userStmt = $pdo->prepare('SELECT id, full_name, username, email, role, avatar_path FROM users WHERE id = :id LIMIT 1');
+$userStmt = $pdo->prepare('SELECT id, tenant_id, full_name, username, email, role, avatar_path FROM users WHERE id = :id LIMIT 1');
 $userStmt->execute(['id' => $userId]);
 $user = $userStmt->fetch();
 if (!$user) {
@@ -29,7 +29,7 @@ if (!$user) {
     redirect('login.php');
 }
 
-$canEditName = ((string) $user['role']) === 'superadmin';
+$canEditName = is_owner($user) || is_tenant_owner($user, $pdo);
 $newName = $canEditName ? $fullNameInput : (string) $user['full_name'];
 
 if ($newName === '') {

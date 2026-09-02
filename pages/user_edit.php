@@ -45,6 +45,7 @@ $isSelf = $current && (
 $isTargetSuperadmin = (string) $editUser['role'] === 'superadmin';
 $isTargetTenantOwner = (string) $editUser['role'] === 'owner' || ((string) $editUser['role'] === 'admin' && (int) $editUser['id'] === $tenantOwnerId);
 $currentIsOwner = is_owner($current);
+$currentIsTenantOwner = is_tenant_owner($current, $pdo);
 
 if ($isSelf && !$currentIsOwner) {
     set_flash('error', 'Owners cannot edit their own account from user management. Use Profile for personal account changes.');
@@ -58,7 +59,7 @@ if ($isTargetTenantOwner && !$currentIsOwner) {
 
 $canDelete = !$isSelf && !$isTargetSuperadmin && !$isTargetTenantOwner;
 $canChangeRole = !$isTargetSuperadmin && !$isTargetTenantOwner;
-$canChangeStatus = $currentIsOwner && !$isTargetSuperadmin && !$isTargetTenantOwner && !$isSelf;
+$canChangeStatus = $currentIsTenantOwner && !$isTargetSuperadmin && !$isTargetTenantOwner && !$isSelf;
 $permissionsLocked = $isTargetSuperadmin || $isTargetTenantOwner;
 $editPermissions = $isTargetSuperadmin ? permission_keys() : user_permission_keys($pdo, (int) $editUser['id']);
 
@@ -126,7 +127,7 @@ require __DIR__ . '/../includes/layout_start.php';
                     <?php if (!$canChangeStatus): ?>
                         <input type="hidden" name="status" value="<?= e((string) $editUser['status']) ?>">
                     <?php endif; ?>
-                    <?php if (!$currentIsOwner): ?>
+                    <?php if (!$currentIsTenantOwner): ?>
                         <small>Only Business Owner can change user active/inactive.</small>
                     <?php endif; ?>
                 </div>

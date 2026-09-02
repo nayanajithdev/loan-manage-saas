@@ -32,7 +32,6 @@ $roundedInstallmentAmount = round((float) ($_POST['rounded_installment_amount'] 
 $useRoundedInstallment = ((int) ($_POST['use_rounded_installment'] ?? 0) === 1) || $roundedInstallmentAmount > 0;
 $canEditLoan = can('loans.edit');
 $canScheduleNextPayment = can('collections.schedule');
-$canExtendLoan = can('loans.extend');
 $routeId = normalize_route_id($pdo, $routeIdInput);
 
 if ($loanId <= 0) {
@@ -482,7 +481,6 @@ function loan_update_public_error_message(Throwable $e): string
         'Cannot shorten the schedule because a removed installment already has payment history.',
         'Edited schedule created an invalid installment amount.',
         'Loan not found.',
-        'You do not have permission to extend collected loans.',
         'Invalid loan for scheduling.',
         'Invalid next payment date.',
         'Next payment date must be after today.',
@@ -524,14 +522,6 @@ try {
     $currentOutstanding = (float) $outstandingStmt->fetchColumn();
     $hasLegacyPreCollected = $collectionsCount === 0 && ($currentOutstanding + 0.009) < (float) $loan['total_amount'];
     $repaymentLocked = $collectionsCount > 0 || $hasLegacyPreCollected;
-
-    $extendsCollectedLoan = $repaymentLocked && (
-        $principal > (float) $loan['principal_amount'] + 0.009
-        || $totalAmount > (float) $loan['total_amount'] + 0.009
-    );
-    if ($extendsCollectedLoan && !$canExtendLoan) {
-        throw new RuntimeException('You do not have permission to extend collected loans.');
-    }
 
     $loanInterestRateType = normalize_interest_rate_type((string) ($loan['interest_rate_type'] ?? 'amount_based'));
     $loanInterestRateMonths = normalize_interest_rate_months((int) ($loan['interest_rate_months'] ?? 1));

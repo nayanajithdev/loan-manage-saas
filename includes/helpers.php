@@ -141,7 +141,6 @@ function permission_groups(): array
                 'loans.view' => ['label' => 'View Loans', 'description' => 'Open loan list and loan details.'],
                 'loans.create' => ['label' => 'Create Loans', 'description' => 'Create loan records and repayment schedules.'],
                 'loans.edit' => ['label' => 'Edit Loans', 'description' => 'Update loan notes, status, and allowed editable fields.'],
-                'loans.extend' => ['label' => 'Extend Loans', 'description' => 'Extend active loans with extra amount or end date changes.'],
                 'loans.delete' => ['label' => 'Delete Loans', 'description' => 'Delete loans and their schedules.'],
                 'routes.view' => ['label' => 'View Routes', 'description' => 'Open route list and route loan counts.'],
                 'routes.create' => ['label' => 'Create Routes', 'description' => 'Create collection routes.'],
@@ -193,7 +192,6 @@ function permission_dependencies(): array
         'customers.documents' => ['customers.view'],
         'loans.create' => ['loans.view'],
         'loans.edit' => ['loans.view'],
-        'loans.extend' => ['loans.view'],
         'loans.delete' => ['loans.view'],
         'routes.create' => ['routes.view'],
         'routes.edit' => ['routes.view'],
@@ -2496,7 +2494,7 @@ function ensure_user_permissions_schema(PDO $pdo): void
         )"
     );
 
-    $pdo->exec("DELETE FROM user_permissions WHERE permission_key = 'customers.view_all'");
+    $pdo->exec("DELETE FROM user_permissions WHERE permission_key IN ('customers.view_all', 'loans.extend')");
 
     $validKeys = permission_keys();
     if ($validKeys === []) {

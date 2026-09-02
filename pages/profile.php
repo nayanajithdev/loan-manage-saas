@@ -13,7 +13,7 @@ if (!$authUser) {
     redirect('login.php');
 }
 
-$userStmt = $pdo->prepare('SELECT id, full_name, username, email, role, avatar_path FROM users WHERE id = :id LIMIT 1');
+$userStmt = $pdo->prepare('SELECT id, tenant_id, full_name, username, email, role, avatar_path FROM users WHERE id = :id LIMIT 1');
 $userStmt->execute(['id' => (int) $authUser['id']]);
 $user = $userStmt->fetch();
 
@@ -23,7 +23,7 @@ if (!$user) {
     redirect('login.php');
 }
 
-$canEditName = ((string) $user['role']) === 'superadmin';
+$canEditName = is_owner($user) || is_tenant_owner($user, $pdo);
 $fullName = (string) $user['full_name'];
 $parts = preg_split('/\s+/', trim($fullName)) ?: [];
 $initials = strtoupper(substr((string) ($parts[0] ?? ''), 0, 1) . substr((string) ($parts[1] ?? ''), 0, 1));
@@ -63,7 +63,7 @@ require __DIR__ . '/../includes/layout_start.php';
                 <label>Name</label>
                 <input type="text" name="full_name" maxlength="120" value="<?= e((string) $user['full_name']) ?>" <?= $canEditName ? '' : 'readonly class="profile-readonly-input"' ?> required>
                 <?php if (!$canEditName): ?>
-                    <small>Only Owner can change name.</small>
+                    <small>Only SaaS Admin or Business Owner can change name.</small>
                 <?php endif; ?>
             </div>
             <div class="field">
