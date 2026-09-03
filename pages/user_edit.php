@@ -133,11 +133,11 @@ require __DIR__ . '/../includes/layout_start.php';
                 </div>
                 <div class="field">
                     <label>New Password (Optional)</label>
-                    <input type="password" name="password" minlength="6" placeholder="Leave blank to keep current password">
+                    <input type="password" name="password" minlength="8" placeholder="Leave blank to keep current password">
                 </div>
                 <div class="field">
                     <label>Confirm New Password</label>
-                    <input type="password" name="confirm_password" minlength="6">
+                    <input type="password" name="confirm_password" minlength="8">
                 </div>
             </div>
         </section>

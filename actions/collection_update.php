@@ -23,8 +23,8 @@ function collection_update_snapshot_row(array $snapshot): array
 
 function collection_update_delete_generated_installments(PDO $pdo, int $loanId, array $groups): void
 {
-    $collectionLinkStmt = $pdo->prepare('SELECT COUNT(*) FROM collections WHERE installment_id = :installment_id');
-    $deleteInstallmentStmt = $pdo->prepare('DELETE FROM loan_installments WHERE id = :id AND loan_id = :loan_id');
+    $collectionLinkStmt = $pdo->prepare('SELECT COUNT(*) FROM collections WHERE installment_id = :installment_id AND ' . tenant_scope_sql());
+    $deleteInstallmentStmt = $pdo->prepare('DELETE FROM loan_installments WHERE id = :id AND loan_id = :loan_id AND ' . tenant_scope_sql());
     $seen = [];
 
     foreach ($groups as $group) {
@@ -41,15 +41,15 @@ function collection_update_delete_generated_installments(PDO $pdo, int $loanId, 
                 continue;
             }
 
-            $collectionLinkStmt->execute(['installment_id' => $installmentId]);
+            $collectionLinkStmt->execute(tenant_scope_params(['installment_id' => $installmentId]));
             if ((int) $collectionLinkStmt->fetchColumn() > 0) {
                 throw new RuntimeException('Cannot edit because a generated installment is still linked to a collection.');
             }
 
-            $deleteInstallmentStmt->execute([
+            $deleteInstallmentStmt->execute(tenant_scope_params([
                 'id' => $installmentId,
                 'loan_id' => $loanId,
-            ]);
+            ]));
             $seen[$installmentId] = true;
         }
     }
@@ -61,9 +61,9 @@ function collection_update_restore_snapshots(PDO $pdo, int $loanId, array $snaps
         throw new RuntimeException('This collection cannot be edited because its installment snapshots are missing.');
     }
 
-    $collectionLinkStmt = $pdo->prepare('SELECT COUNT(*) FROM collections WHERE installment_id = :installment_id');
-    $deleteInstallmentStmt = $pdo->prepare('DELETE FROM loan_installments WHERE id = :id AND loan_id = :loan_id');
-    $existsInstallmentStmt = $pdo->prepare('SELECT COUNT(*) FROM loan_installments WHERE id = :id');
+    $collectionLinkStmt = $pdo->prepare('SELECT COUNT(*) FROM collections WHERE installment_id = :installment_id AND ' . tenant_scope_sql());
+    $deleteInstallmentStmt = $pdo->prepare('DELETE FROM loan_installments WHERE id = :id AND loan_id = :loan_id AND ' . tenant_scope_sql());
+    $existsInstallmentStmt = $pdo->prepare('SELECT COUNT(*) FROM loan_installments WHERE id = :id AND ' . tenant_scope_sql());
     $updateInstallmentStmt = $pdo->prepare(
         'UPDATE loan_installments
          SET loan_id = :loan_id,
@@ -75,7 +75,8 @@ function collection_update_restore_snapshots(PDO $pdo, int $loanId, array $snaps
              status = :status,
              is_flexible_adjustment = :is_flexible_adjustment,
              source_payment_ref = :source_payment_ref
-         WHERE id = :id'
+         WHERE id = :id
+           AND tenant_id = :tenant_id'
     );
     $insertInstallmentStmt = $pdo->prepare(
         'INSERT INTO loan_installments
@@ -97,14 +98,14 @@ function collection_update_restore_snapshots(PDO $pdo, int $loanId, array $snaps
         }
 
         if (!$existsBefore) {
-            $collectionLinkStmt->execute(['installment_id' => $installmentId]);
+            $collectionLinkStmt->execute(tenant_scope_params(['installment_id' => $installmentId]));
             if ((int) $collectionLinkStmt->fetchColumn() > 0) {
                 throw new RuntimeException('Cannot edit because a generated installment has collection links.');
             }
-            $deleteInstallmentStmt->execute([
+            $deleteInstallmentStmt->execute(tenant_scope_params([
                 'id' => $installmentId,
                 'loan_id' => $loanId,
-            ]);
+            ]));
             continue;
         }
 
@@ -135,7 +136,7 @@ function collection_update_restore_snapshots(PDO $pdo, int $loanId, array $snaps
             throw new RuntimeException('Cannot edit because an installment snapshot is invalid.');
         }
 
-        $existsInstallmentStmt->execute(['id' => $installmentId]);
+        $existsInstallmentStmt->execute(tenant_scope_params(['id' => $installmentId]));
         if ((int) $existsInstallmentStmt->fetchColumn() > 0) {
             $updateInstallmentStmt->execute($params);
         } else {
@@ -152,11 +153,12 @@ function collection_update_next_installment_id(PDO $pdo, int $loanId): int
          WHERE loan_id = :loan_id
            AND status IN ('pending', 'partial', 'overdue')
            AND due_amount > paid_amount
+           AND " . tenant_scope_sql() . "
          ORDER BY due_date ASC, installment_no ASC
          LIMIT 1
          FOR UPDATE"
     );
-    $stmt->execute(['loan_id' => $loanId]);
+    $stmt->execute(tenant_scope_params(['loan_id' => $loanId]));
 
     return (int) ($stmt->fetchColumn() ?: 0);
 }
@@ -275,6 +277,11 @@ try {
         throw new RuntimeException('Legacy collection rows cannot be edited safely.');
     }
 
+    $existingCollectedOn = (string) ($selectedGroup['collected_on'] ?? '');
+    if ($collectedOn !== $existingCollectedOn && !can('collections.backdate')) {
+        throw new RuntimeException('You do not have permission to change collection date.');
+    }
+
     $selectedMeta = is_array($selectedGroup['meta'] ?? null) ? $selectedGroup['meta'] : [];
     $selectedSnapshots = is_array($selectedMeta['installment_snapshots'] ?? null) ? $selectedMeta['installment_snapshots'] : [];
     if ($selectedSnapshots === []) {
@@ -309,17 +316,18 @@ try {
     $deleteCollectionStmt = $pdo->prepare(
         'DELETE FROM collections
          WHERE loan_id = :loan_id
-           AND payment_ref = :payment_ref'
+           AND payment_ref = :payment_ref
+           AND ' . tenant_scope_sql()
     );
     foreach ($groupsToReplay as $group) {
         $paymentRef = trim((string) $group['payment_ref']);
         if ($paymentRef === '') {
             throw new RuntimeException('Cannot edit because a later collection has no payment reference.');
         }
-        $deleteCollectionStmt->execute([
+        $deleteCollectionStmt->execute(tenant_scope_params([
             'loan_id' => $loanId,
             'payment_ref' => $paymentRef,
-        ]);
+        ]));
     }
 
     collection_update_delete_generated_installments($pdo, $loanId, $groupsToReplay);
@@ -382,14 +390,15 @@ try {
          FROM loan_installments
          WHERE loan_id = :loan_id
            AND status IN ('pending', 'partial', 'overdue')
-           AND due_amount > paid_amount"
+           AND due_amount > paid_amount
+           AND " . tenant_scope_sql()
     );
-    $pendingCountStmt->execute(['loan_id' => $loanId]);
+    $pendingCountStmt->execute(tenant_scope_params(['loan_id' => $loanId]));
     $pendingCount = (int) $pendingCountStmt->fetchColumn();
     if ($pendingCount === 0) {
-        $pdo->prepare("UPDATE loans SET status = 'closed' WHERE id = :id")->execute(['id' => $loanId]);
+        $pdo->prepare("UPDATE loans SET status = 'closed' WHERE id = :id AND " . tenant_scope_sql())->execute(tenant_scope_params(['id' => $loanId]));
     } else {
-        $pdo->prepare("UPDATE loans SET status = 'active' WHERE id = :id")->execute(['id' => $loanId]);
+        $pdo->prepare("UPDATE loans SET status = 'active' WHERE id = :id AND " . tenant_scope_sql())->execute(tenant_scope_params(['id' => $loanId]));
     }
 
     $pdo->commit();

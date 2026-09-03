@@ -20,8 +20,14 @@ if ($loanId <= 0) {
     redirect('pages/loans.php');
 }
 
+$current = current_user();
+$canViewCustomer = can('customers.view');
+$loanCustomerSelect = $canViewCustomer
+    ? 'c.customer_code, c.full_name, c.nic AS customer_nic, c.phone AS customer_phone, c.address AS customer_address'
+    : 'c.customer_code';
+
 $loanStmt = $pdo->prepare(
-    "SELECT l.*, c.full_name, c.nic AS customer_nic, c.phone AS customer_phone, c.address AS customer_address
+    "SELECT l.*, " . $loanCustomerSelect . "
      FROM loans l
      JOIN customers c ON c.id = l.customer_id
      WHERE l.id = :id
@@ -37,15 +43,20 @@ if (!$loan) {
 }
 
 
-$customerStmt = $pdo->prepare("SELECT id, customer_code, full_name, nic FROM customers WHERE status = 'active' AND " . tenant_scope_sql() . " ORDER BY full_name ASC");
-$customerStmt->execute(tenant_scope_params());
-$customers = $customerStmt->fetchAll();
-$routes = route_options($pdo);
-$current = current_user();
 $canEditLoan = can('loans.edit');
 $canScheduleNextPayment = can('collections.schedule');
 $canDeleteLoan = can('loans.delete');
-$canViewCustomer = can('customers.view');
+if ($canViewCustomer) {
+    $customerStmt = $pdo->prepare("SELECT id, customer_code, full_name, nic FROM customers WHERE status = 'active' AND " . tenant_scope_sql() . " ORDER BY full_name ASC");
+    $customerStmt->execute(tenant_scope_params());
+    $customers = $customerStmt->fetchAll();
+} else {
+    $customers = [[
+        'id' => (int) ($loan['customer_id'] ?? 0),
+        'customer_code' => (string) ($loan['customer_code'] ?? ''),
+    ]];
+}
+$routes = route_options($pdo);
 $canRecordCollection = can('collections.record');
 $canViewLoanCollectionRecords = can('collections.loan_records');
 $canEditCollection = can('collections.loan_records_edit');
@@ -222,10 +233,15 @@ $businessPhone = trim((string) ($businessSettings['business_phone'] ?? ''));
 $businessNote = trim((string) ($businessSettings['business_note'] ?? ''));
 $businessIconPath = business_icon_path($pdo);
 $reportLoanNumber = trim($loanDisplayNumber) !== '' ? $loanDisplayNumber : ('#' . $loanId);
-$customerNicNumber = customer_id_no_label((string) ($loan['customer_nic'] ?? ''));
-$customerFirstNameParts = preg_split('/\s+/', trim((string) $loan['full_name']));
-$customerFirstName = $customerFirstNameParts[0] ?? 'customer';
-$printReportFileName = preg_replace('/[^A-Za-z0-9_-]+/', '-', $reportLoanNumber . '-' . $customerFirstName) ?? 'collection-report';
+$loanCustomerLabel = $canViewCustomer ? trim((string) ($loan['full_name'] ?? '')) : loan_customer_display_label($loan);
+if ($loanCustomerLabel === '') {
+    $loanCustomerLabel = loan_customer_display_label($loan);
+}
+$customerNicNumber = $canViewCustomer ? customer_id_no_label((string) ($loan['customer_nic'] ?? '')) : '-';
+$customerFirstNameParts = $canViewCustomer ? preg_split('/\s+/', trim((string) ($loan['full_name'] ?? ''))) : [];
+$customerFirstName = $customerFirstNameParts[0] ?? '';
+$printReportNameParts = array_filter([$reportLoanNumber, $customerFirstName], static fn (string $part): bool => trim($part) !== '');
+$printReportFileName = preg_replace('/[^A-Za-z0-9_-]+/', '-', implode('-', $printReportNameParts)) ?? 'collection-report';
 $printReportFileName = trim($printReportFileName, '-_');
 if ($printReportFileName === '') {
     $printReportFileName = 'collection-report';
@@ -346,15 +362,15 @@ require __DIR__ . '/../includes/layout_start.php';
         <div class="loan-form-divider">Loan Details</div>
         <div class="field">
             <label>Customer</label>
-            <select name="customer_id" required <?= ($canEditLoan && !$repaymentLocked) ? 'disabled data-loan-edit-controlled' : 'disabled' ?>>
+            <select name="customer_id" required <?= ($canEditLoan && !$repaymentLocked && $canViewCustomer) ? 'disabled data-loan-edit-controlled' : 'disabled' ?>>
                 <option value="">Select customer</option>
                 <?php foreach ($customers as $customer): ?>
                     <option value="<?= e((string) $customer['id']) ?>" <?= (int) $loan['customer_id'] === (int) $customer['id'] ? 'selected' : '' ?>>
-                        <?= e(customer_display_label($customer)) ?>
+                        <?= e($canViewCustomer ? customer_display_label($customer) : loan_customer_display_label($customer)) ?>
                     </option>
                 <?php endforeach; ?>
             </select>
-            <?php if ($repaymentLocked): ?>
+            <?php if ($repaymentLocked || !$canViewCustomer): ?>
                 <input type="hidden" name="customer_id" value="<?= e((string) $loan['customer_id']) ?>">
             <?php endif; ?>
         </div>
@@ -581,7 +597,7 @@ require __DIR__ . '/../includes/layout_start.php';
                     </div>
                     <div class="loan-collect-item loan-collect-item-plain">
                         <span>Customer</span>
-                        <strong><?= e((string) $loan['full_name']) ?></strong>
+                        <strong><?= e($loanCustomerLabel) ?></strong>
                     </div>
                     <div class="loan-collect-item">
                         <span data-loan-collect-installment-label>Installment</span>

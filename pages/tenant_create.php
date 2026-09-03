@@ -6,7 +6,7 @@ require_once __DIR__ . '/../includes/bootstrap.php';
 
 require_platform_owner();
 
-$pageTitle = 'Create Tenant';
+$pageTitle = 'Create Business';
 $activePage = 'tenants';
 $oldInput = is_array($_SESSION['tenant_create_old_input'] ?? null) ? $_SESSION['tenant_create_old_input'] : [];
 unset($_SESSION['tenant_create_old_input']);
@@ -28,15 +28,15 @@ require __DIR__ . '/../includes/layout_start.php';
         <span class="btn-icon-inline" aria-hidden="true">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
         </span>
-        Back to Tenants
+        Back to Businesses
     </a>
 </div>
 
 <section class="panel tenant-create-page-panel">
     <div class="panel-head compact-panel-head">
         <div>
-            <h2 class="panel-title">Create Tenant</h2>
-            <p class="panel-subtext">Create a tenant workspace and its first tenant owner account.</p>
+            <h2 class="panel-title">Create Business</h2>
+            <p class="panel-subtext">Create a business workspace and its first business owner account.</p>
         </div>
     </div>
 
@@ -67,8 +67,8 @@ require __DIR__ . '/../includes/layout_start.php';
             <input id="tenant-username" type="text" name="username" maxlength="80" value="<?= e($old('username')) ?>" required>
         </div>
         <div class="form-field">
-            <label for="tenant-password">Admin Password</label>
-            <input id="tenant-password" type="password" name="password" minlength="6" required>
+            <label for="tenant-password">Owner Password</label>
+            <input id="tenant-password" type="password" name="password" minlength="8" required>
         </div>
         <div class="form-field">
             <label for="tenant-status">Initial Status</label>
@@ -82,7 +82,7 @@ require __DIR__ . '/../includes/layout_start.php';
             <textarea id="tenant-notes" name="notes" rows="4"><?= e($old('notes')) ?></textarea>
         </div>
         <div class="form-actions">
-            <button class="btn btn-primary" type="submit">Create Tenant</button>
+            <button class="btn btn-primary" type="submit">Create Business</button>
         </div>
     </form>
 </section>

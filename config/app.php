@@ -110,15 +110,30 @@ if (!defined('LOCAL_APP_CONFIG')) {
 
 const APP_NAME = 'Loan Management SaaS';
 const APP_VERSION = '2.0';
-define('APP_ENV', strtolower(trim(env_value('APP_ENV', 'local'))) ?: 'local');
-define('APP_DEBUG', env_bool('APP_DEBUG', APP_ENV !== 'production'));
-define('FORCE_HTTPS', env_bool('FORCE_HTTPS', false));
-define('OWNER_SECRET_PATH', trim(preg_replace('/[^A-Za-z0-9_-]/', '', env_value('OWNER_SECRET_PATH', 'f3fd7t3'))) ?: 'f3fd7t3');
+$hasLocalDbConfig = is_array($localDbConfig) && $localDbConfig !== [];
+$defaultAppEnv = $hasLocalDbConfig ? 'local' : 'production';
+$defaultOwnerSecretPath = $hasLocalDbConfig ? 'f3fd7t3' : '';
+
+define('APP_ENV', strtolower(trim(env_value('APP_ENV', $defaultAppEnv))) ?: $defaultAppEnv);
+define('APP_DEBUG', env_bool('APP_DEBUG', false));
+define('FORCE_HTTPS', env_bool('FORCE_HTTPS', APP_ENV === 'production'));
+define('TRUSTED_PROXY_IPS', db_config_value('TRUSTED_PROXY_IPS', 'trusted_proxy_ips', '', $localDbConfig));
+define('OWNER_SECRET_PATH', trim(preg_replace('/[^A-Za-z0-9_-]/', '', env_value('OWNER_SECRET_PATH', $defaultOwnerSecretPath))) ?: $defaultOwnerSecretPath);
 define('DB_HOST', db_config_value('DB_HOST', 'host', '127.0.0.1', $localDbConfig));
 define('DB_PORT', db_config_value('DB_PORT', 'port', '3306', $localDbConfig));
 define('DB_NAME', db_config_value('DB_NAME', 'name', 'loan_manage_saas', $localDbConfig));
-define('DB_USER', db_config_value('DB_USER', 'user', 'root', $localDbConfig));
+define('DB_USER', db_config_value('DB_USER', 'user', '', $localDbConfig));
 define('DB_PASS', db_config_value('DB_PASS', 'pass', '', $localDbConfig));
+
+if (APP_ENV === 'production') {
+    if (OWNER_SECRET_PATH === '') {
+        throw new RuntimeException('OWNER_SECRET_PATH is required in production.');
+    }
+
+    if (DB_USER === '') {
+        throw new RuntimeException('DB_USER is required in production.');
+    }
+}
 
 date_default_timezone_set('Asia/Colombo');
 

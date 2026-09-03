@@ -28,7 +28,7 @@ require __DIR__ . '/../includes/layout_start.php';
 
         <div class="backup-note">
             <h3>What this download contains</h3>
-            <p>SQL backup includes current database structure and saved records for all tenants.</p>
+            <p>SQL backup includes current database structure and saved records for all businesses.</p>
             <p class="backup-table-list"><?= e(implode(', ', $tableNames)) ?></p>
         </div>
 
@@ -49,7 +49,7 @@ require __DIR__ . '/../includes/layout_start.php';
 
         <div class="backup-note backup-warning">
             <h3>Warning</h3>
-            <p>Restoring a backup will replace current database structure and data for the full system. Download a fresh backup first if needed.</p>
+            <p>Restoring a backup will replace current database structure and data for the full system. Only app-generated backups are accepted. Full ZIP restores are limited by upload file count and uncompressed size. Download a fresh backup first if needed.</p>
         </div>
 
         <form method="post" action="<?= e(url('actions/backup_restore.php')) ?>" enctype="multipart/form-data" class="form-grid backup-form">

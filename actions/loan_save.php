@@ -147,6 +147,11 @@ if ($useRoundedInstallment) {
     $installmentAmount = round($totalAmount / $installmentCount, 2);
 }
 
+if ($installmentCount > 2000) {
+    set_flash('error', 'Generated installment schedule is too long. Increase the changed installment amount or reduce the timeframe.');
+    redirect('pages/loan_create.php');
+}
+
 $startDate = $issuedDate;
 
 try {

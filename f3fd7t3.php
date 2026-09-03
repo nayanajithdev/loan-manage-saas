@@ -83,11 +83,11 @@ $faviconPath = business_icon_path($pdo);
                 </div>
                 <div class="field full">
                     <label>Password</label>
-                    <input type="password" name="password" required minlength="6">
+                    <input type="password" name="password" required minlength="8">
                 </div>
                 <div class="field full">
                     <label>Confirm Password</label>
-                    <input type="password" name="confirm_password" required minlength="6">
+                    <input type="password" name="confirm_password" required minlength="8">
                 </div>
                 <div class="field full" style="align-self:end;">
                     <button type="submit" class="btn btn-primary">Create SaaS Admin</button>

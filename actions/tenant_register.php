@@ -34,8 +34,8 @@ if ($password !== $confirmPassword) {
     redirect('register.php');
 }
 
-if (strlen($password) < 6) {
-    set_flash('error', 'Password must be at least 6 characters.');
+if (!password_meets_policy($password)) {
+    set_flash('error', password_policy_message());
     redirect('register.php');
 }
 
@@ -44,17 +44,21 @@ $slug = $slug !== '' ? tenant_slug_from_name($slug) : tenant_slug_from_name($nam
 $existsStmt = $pdo->prepare('SELECT id FROM tenants WHERE slug = :slug LIMIT 1');
 $existsStmt->execute(['slug' => $slug]);
 if ($existsStmt->fetch()) {
-    set_flash('error', 'Tenant slug already exists.');
+    set_flash('error', 'Business slug already exists.');
     redirect('register.php');
 }
 
-$userStmt = $pdo->prepare('SELECT id FROM users WHERE username = :username OR email = :email LIMIT 1');
-$userStmt->execute([
-    'username' => $username,
-    'email' => $ownerEmail,
-]);
-if ($userStmt->fetch()) {
-    set_flash('error', 'Owner username or owner email already exists.');
+$usernameStmt = $pdo->prepare('SELECT id FROM users WHERE username = :username LIMIT 1');
+$usernameStmt->execute(['username' => $username]);
+if ($usernameStmt->fetch()) {
+    set_flash('error', 'Username already exists.');
+    redirect('register.php');
+}
+
+$emailStmt = $pdo->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
+$emailStmt->execute(['email' => $ownerEmail]);
+if ($emailStmt->fetch()) {
+    set_flash('error', 'Email already exists.');
     redirect('register.php');
 }
 
@@ -109,14 +113,14 @@ try {
     $pdo->commit();
 } catch (Throwable) {
     $pdo->rollBack();
-    set_flash('error', 'Failed to submit tenant registration.');
+    set_flash('error', 'Failed to submit business registration. Please try again.');
     redirect('register.php');
 }
 
-log_activity($pdo, 'tenant.registered', 'Tenant registration submitted: ' . $name . '.', [
+log_activity($pdo, 'tenant.registered', 'Business registration submitted: ' . $name . '.', [
     'tenant_id' => $tenantId,
     'tenant_slug' => $slug,
 ]);
 
-set_flash('success', 'Registration submitted. You can login after the SaaS Admin approves your tenant.');
+set_flash('success', 'Registration submitted. You can login after the SaaS Admin approves your business.');
 redirect('login.php');

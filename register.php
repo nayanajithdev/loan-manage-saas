@@ -19,7 +19,7 @@ if ($loginBusinessName === '') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Register Tenant | <?= e(APP_NAME) ?></title>
+    <title>Register Business | <?= e(APP_NAME) ?></title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -32,7 +32,7 @@ if ($loginBusinessName === '') {
 <div class="auth-shell">
     <section class="auth-card auth-card-wide">
         <h1><?= e($loginBusinessName) ?></h1>
-        <p class="auth-sub">Tenant registration</p>
+        <p class="auth-sub">Business registration</p>
 
         <?php if ($flash): ?>
             <div class="flash flash-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
@@ -44,7 +44,6 @@ if ($loginBusinessName === '') {
                 <label>Business Name</label>
                 <input type="text" name="name" required autofocus>
             </div>
-
             <div class="field full">
                 <label>Owner Name</label>
                 <input type="text" name="owner_name" required>
@@ -63,15 +62,15 @@ if ($loginBusinessName === '') {
             </div>
             <div class="field full">
                 <label>Password</label>
-                <input type="password" name="password" required minlength="6">
+                <input type="password" name="password" required minlength="8">
             </div>
             <div class="field full">
                 <label>Confirm Password</label>
-                <input type="password" name="confirm_password" required minlength="6">
+                <input type="password" name="confirm_password" required minlength="8">
             </div>
 
             <div class="field full" style="align-self:end;">
-                <button type="submit" class="btn btn-primary">Register Tenant</button>
+                <button type="submit" class="btn btn-primary">Register Business</button>
             </div>
             <div class="field full auth-register-row">
                 <span>Already approved?</span>

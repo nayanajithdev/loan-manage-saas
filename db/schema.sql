@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     tenant_id INT NULL,
     full_name VARCHAR(120) NOT NULL,
-    username VARCHAR(80) NOT NULL UNIQUE,
+    username VARCHAR(80) NOT NULL,
     email VARCHAR(190) NULL,
     password_hash VARCHAR(255) NOT NULL,
     role ENUM('superadmin', 'owner', 'manager', 'collector') NOT NULL DEFAULT 'manager',
@@ -37,9 +37,10 @@ CREATE TABLE IF NOT EXISTS users (
     INDEX idx_users_tenant_id (tenant_id),
     INDEX idx_users_role (role),
     INDEX idx_users_status (status),
+    UNIQUE KEY username (username),
+    UNIQUE KEY uq_users_email (email),
     UNIQUE KEY uq_users_one_owner_per_tenant (owner_tenant_unique_key),
-    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
-    UNIQUE KEY uq_users_email (email)
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS user_permissions (

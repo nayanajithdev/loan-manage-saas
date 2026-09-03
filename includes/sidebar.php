@@ -31,7 +31,7 @@ $iconSvgs = [
 $menuItems = [];
 
 if (is_owner($authUser)) {
-    $menuItems[] = ['key' => 'tenants', 'label' => 'Tenants', 'path' => 'pages/tenants.php'];
+    $menuItems[] = ['key' => 'tenants', 'label' => 'Businesses', 'path' => 'pages/tenants.php'];
     $menuItems[] = ['key' => 'backup', 'label' => 'Backup / Restore', 'path' => 'pages/backup.php'];
 } elseif (can('dashboard.view')) {
     $menuItems[] = ['key' => 'dashboard', 'label' => 'Dashboard', 'path' => 'index.php'];
@@ -84,7 +84,7 @@ if ($settingsChildren !== []) {
     $menuItems[] = ['key' => 'settings_group', 'label' => 'Settings', 'children' => $settingsChildren];
 }
 
-$brandHref = can('business_settings.manage') ? 'pages/settings.php' : 'pages/about.php';
+$brandHref = (!is_owner($authUser) && can('business_settings.manage')) ? 'pages/settings.php' : 'pages/about.php';
 ?>
 
 <aside class="sidebar" id="main-sidebar">

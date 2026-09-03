@@ -142,6 +142,8 @@ if ($targetRole === 'superadmin' || $isTargetTenantOwner || $isSelf) {
     $status = 'active';
 }
 
+$targetTenantId = (int) ($targetUser['tenant_id'] ?? 0);
+
 $existsStmt = $pdo->prepare('SELECT id FROM users WHERE username = :username AND id <> :id LIMIT 1');
 $existsStmt->execute([
     'username' => $username,
@@ -168,13 +170,13 @@ if ($password !== '' || $confirmPassword !== '') {
         redirect($resolvedEditReturnTo);
     }
 
-    if (strlen($password) < 6) {
-        set_flash('error', 'Password must be at least 6 characters.');
+    if (!password_meets_policy($password)) {
+        set_flash('error', password_policy_message());
         redirect($resolvedEditReturnTo);
     }
 
     $updateStmt = $pdo->prepare(
-        'UPDATE users SET full_name = :full_name, username = :username, email = :email, role = :role, status = :status, password_hash = :password_hash WHERE id = :id'
+        'UPDATE users SET full_name = :full_name, username = :username, email = :email, role = :role, status = :status, password_hash = :password_hash WHERE id = :id AND tenant_id = :tenant_id'
     );
     $updateStmt->execute([
         'full_name' => $fullName,
@@ -184,11 +186,12 @@ if ($password !== '' || $confirmPassword !== '') {
         'status' => $status,
         'password_hash' => password_hash($password, PASSWORD_DEFAULT),
         'id' => $userId,
+        'tenant_id' => $targetTenantId,
     ]);
     remember_forget_user($pdo, $userId);
 } else {
     $updateStmt = $pdo->prepare(
-        'UPDATE users SET full_name = :full_name, username = :username, email = :email, role = :role, status = :status WHERE id = :id'
+        'UPDATE users SET full_name = :full_name, username = :username, email = :email, role = :role, status = :status WHERE id = :id AND tenant_id = :tenant_id'
     );
     $updateStmt->execute([
         'full_name' => $fullName,
@@ -197,6 +200,7 @@ if ($password !== '' || $confirmPassword !== '') {
         'role' => $role,
         'status' => $status,
         'id' => $userId,
+        'tenant_id' => $targetTenantId,
     ]);
 }
 

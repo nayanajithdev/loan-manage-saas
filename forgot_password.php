@@ -38,7 +38,7 @@ $faviconPath = business_icon_path($pdo);
             <?= csrf_input() ?>
             <div class="field full">
                 <label>Email</label>
-                <input type="email" name="email" required autofocus>
+                <input type="email" name="email" autocomplete="email" required autofocus>
             </div>
             <div class="field full" style="align-self:end;">
                 <button type="submit" class="btn btn-primary">Send Reset Link</button>

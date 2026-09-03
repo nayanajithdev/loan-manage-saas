@@ -114,8 +114,11 @@ try {
 
     remember_forget_user($pdo, $userId);
 
-    $deleteStmt = $pdo->prepare('DELETE FROM users WHERE id = :id');
-    $deleteStmt->execute(['id' => $userId]);
+    $deleteStmt = $pdo->prepare('DELETE FROM users WHERE id = :id AND tenant_id = :tenant_id');
+    $deleteStmt->execute([
+        'id' => $userId,
+        'tenant_id' => (int) ($targetUser['tenant_id'] ?? 0),
+    ]);
 
     $pdo->commit();
 } catch (Throwable $e) {

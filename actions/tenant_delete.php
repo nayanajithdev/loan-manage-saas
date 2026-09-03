@@ -13,7 +13,7 @@ require_csrf('pages/tenants.php');
 
 $tenantId = (int) ($_POST['tenant_id'] ?? 0);
 if ($tenantId <= 0) {
-    set_flash('error', 'Invalid tenant.');
+    set_flash('error', 'Invalid business.');
     redirect('pages/tenants.php');
 }
 
@@ -31,9 +31,9 @@ foreach ($usersStmt->fetchAll(PDO::FETCH_COLUMN) as $userId) {
     force_logout_user_everywhere($pdo, (int) $userId);
 }
 
-log_activity($pdo, 'tenant.deleted', 'Tenant soft-deleted.', [
+log_activity($pdo, 'tenant.deleted', 'Business soft-deleted.', [
     'tenant_id' => $tenantId,
 ]);
 
-set_flash('success', 'Tenant deleted.');
+set_flash('success', 'Business deleted.');
 redirect('pages/tenants.php');

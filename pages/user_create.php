@@ -57,11 +57,11 @@ require __DIR__ . '/../includes/layout_start.php';
                 </div>
                 <div class="field">
                     <label>Password</label>
-                    <input type="password" name="password" minlength="6" required>
+                    <input type="password" name="password" minlength="8" required>
                 </div>
                 <div class="field">
                     <label>Confirm Password</label>
-                    <input type="password" name="confirm_password" minlength="6" required>
+                    <input type="password" name="confirm_password" minlength="8" required>
                 </div>
             </div>
         </section>

@@ -82,6 +82,18 @@ function e(string $value): string
     return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
 }
 
+function password_meets_policy(string $password): bool
+{
+    return strlen($password) >= 8
+        && preg_match('/[A-Za-z]/', $password) === 1
+        && preg_match('/\d/', $password) === 1;
+}
+
+function password_policy_message(string $label = 'Password'): string
+{
+    return $label . ' must be at least 8 characters and include at least one letter and one number.';
+}
+
 function role_display_name(string $role): string
 {
     return match ($role) {
@@ -160,7 +172,6 @@ function permission_groups(): array
                 'activity_logs.view' => ['label' => 'Activity Logs', 'description' => 'Review audit history and user actions.'],
                 'business_settings.manage' => ['label' => 'Business Settings', 'description' => 'Update business profile and business icon.'],
                 'system_settings.view' => ['label' => 'View System Settings', 'description' => 'View system defaults and configuration.'],
-                'system_settings.manage' => ['label' => 'Edit System Settings', 'description' => 'Change system defaults and configuration.'],
             ],
         ],
     ];
@@ -198,7 +209,6 @@ function permission_dependencies(): array
         'routes.delete' => ['routes.view'],
         'collections.loan_records_edit' => ['collections.loan_records'],
         'collections.loan_records_delete' => ['collections.loan_records_edit'],
-        'system_settings.manage' => ['system_settings.view'],
     ];
 }
 
@@ -250,7 +260,6 @@ function role_default_permissions(string $role): array
     if ($role === 'manager' || $role === 'admin') {
         return array_values(array_diff($all, [
             'activity_logs.view',
-            'system_settings.manage',
         ]));
     }
 
@@ -512,29 +521,99 @@ function get_flash(): ?array
     return $flash;
 }
 
-function client_ip_address(): string
+function trusted_proxy_ranges(): array
 {
-    $candidates = [
-        (string) ($_SERVER['HTTP_CF_CONNECTING_IP'] ?? ''),
-        (string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''),
-        (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
-    ];
+    $raw = defined('TRUSTED_PROXY_IPS') ? (string) TRUSTED_PROXY_IPS : '';
+    if (trim($raw) === '') {
+        return [];
+    }
 
-    foreach ($candidates as $candidate) {
-        if ($candidate === '') {
-            continue;
+    return array_values(array_filter(array_map('trim', explode(',', $raw)), static fn (string $range): bool => $range !== ''));
+}
+
+function ip_matches_trusted_range(string $ip, string $range): bool
+{
+    if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+        return false;
+    }
+
+    if (!str_contains($range, '/')) {
+        return filter_var($range, FILTER_VALIDATE_IP) && @inet_pton($ip) === @inet_pton($range);
+    }
+
+    [$network, $prefixLength] = array_pad(explode('/', $range, 2), 2, '');
+    $network = trim($network);
+    $prefixLength = trim($prefixLength);
+    if (!filter_var($network, FILTER_VALIDATE_IP) || !ctype_digit($prefixLength)) {
+        return false;
+    }
+
+    $ipPacked = @inet_pton($ip);
+    $networkPacked = @inet_pton($network);
+    if ($ipPacked === false || $networkPacked === false || strlen($ipPacked) !== strlen($networkPacked)) {
+        return false;
+    }
+
+    $bits = (int) $prefixLength;
+    $maxBits = strlen($ipPacked) * 8;
+    if ($bits < 0 || $bits > $maxBits) {
+        return false;
+    }
+
+    $fullBytes = intdiv($bits, 8);
+    $remainingBits = $bits % 8;
+
+    if ($fullBytes > 0 && substr($ipPacked, 0, $fullBytes) !== substr($networkPacked, 0, $fullBytes)) {
+        return false;
+    }
+
+    if ($remainingBits === 0) {
+        return true;
+    }
+
+    $mask = (0xff << (8 - $remainingBits)) & 0xff;
+    return (ord($ipPacked[$fullBytes]) & $mask) === (ord($networkPacked[$fullBytes]) & $mask);
+}
+
+function request_from_trusted_proxy(string $remoteIp): bool
+{
+    foreach (trusted_proxy_ranges() as $range) {
+        if (ip_matches_trusted_range($remoteIp, $range)) {
+            return true;
         }
+    }
 
-        $parts = explode(',', $candidate);
-        foreach ($parts as $part) {
-            $ip = trim($part);
-            if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP)) {
-                return $ip;
-            }
+    return false;
+}
+
+function first_valid_ip_from_header(string $header): string
+{
+    foreach (explode(',', $header) as $part) {
+        $ip = trim($part);
+        if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP)) {
+            return $ip;
         }
     }
 
     return '';
+}
+
+function client_ip_address(): string
+{
+    $remoteIp = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
+    if ($remoteIp !== '' && filter_var($remoteIp, FILTER_VALIDATE_IP) && request_from_trusted_proxy($remoteIp)) {
+        $cloudflareIp = first_valid_ip_from_header((string) ($_SERVER['HTTP_CF_CONNECTING_IP'] ?? ''));
+        if ($cloudflareIp !== '') {
+            return $cloudflareIp;
+        }
+
+        $forwardedIp = first_valid_ip_from_header((string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''));
+        if ($forwardedIp !== '') {
+            return $forwardedIp;
+        }
+    }
+
+    return filter_var($remoteIp, FILTER_VALIDATE_IP) ? $remoteIp : '';
 }
 
 function ensure_private_guard_file(string $directoryAbs): void
@@ -1035,6 +1114,17 @@ function customer_display_label(array $customer): string
     return $idNo !== '-' ? $name . ' - ' . $idNo : $name;
 }
 
+function loan_customer_display_label(array $customer): string
+{
+    $code = trim((string) ($customer['customer_code'] ?? ''));
+    if ($code !== '') {
+        return 'Customer ' . $code;
+    }
+
+    $id = (int) ($customer['customer_id'] ?? $customer['id'] ?? 0);
+    return $id > 0 ? 'Customer ID ' . $id : 'Customer';
+}
+
 function status_badge_class(string $status): string
 {
     return match ($status) {
@@ -1119,11 +1209,11 @@ function tenant_status_allows_access(string $status): bool
 function tenant_blocked_login_message(string $status): string
 {
     return match ($status) {
-        'pending' => 'Your tenant account is pending approval.',
-        'rejected' => 'Your tenant account was rejected. Please contact owner.',
-        'suspended' => 'Your tenant account is suspended. Please contact owner.',
-        'deleted' => 'Your tenant account is not available.',
-        default => 'Your tenant account is not approved yet.',
+        'pending' => 'Your business account is pending approval.',
+        'rejected' => 'Your business account was rejected. Please contact owner.',
+        'suspended' => 'Your business account is suspended. Please contact owner.',
+        'deleted' => 'Your business account is not available.',
+        default => 'Your business account is not approved yet.',
     };
 }
 
@@ -1139,7 +1229,7 @@ function require_tenant_context(string $redirectPath = 'pages/tenants.php'): int
 {
     $tenantId = current_tenant_id();
     if ($tenantId === null) {
-        set_flash('error', 'Open a tenant account to access tenant operations.');
+        set_flash('error', 'Open a business account to access business operations.');
         redirect($redirectPath);
     }
 
@@ -1190,6 +1280,13 @@ function ensure_multi_tenant_schema(PDO $pdo): void
         INDEX idx_tenants_owner_email (owner_email)
     )");
 
+    if (table_has_index($pdo, 'tenants', 'uq_tenants_business_code')) {
+        safe_exec_schema($pdo, 'ALTER TABLE tenants DROP INDEX uq_tenants_business_code');
+    }
+    if (table_has_column($pdo, 'tenants', 'business_code')) {
+        safe_exec_schema($pdo, 'ALTER TABLE tenants DROP COLUMN business_code');
+    }
+
     if (!table_has_column($pdo, 'users', 'tenant_id')) {
         safe_exec_schema($pdo, 'ALTER TABLE users ADD COLUMN tenant_id INT NULL AFTER id');
     }
@@ -1238,7 +1335,7 @@ function ensure_multi_tenant_schema(PDO $pdo): void
     if ($tenantCount === 0 && $legacyDataCount > 0) {
         $pdo->prepare(
             "INSERT INTO tenants (name, slug, owner_name, owner_email, status, approved_at)
-             VALUES ('Default Tenant', 'default-tenant', 'Default Tenant Admin', NULL, 'approved', NOW())"
+             VALUES ('Default Business', 'default-tenant', 'Default Business Owner', NULL, 'approved', NOW())"
         )->execute();
     }
 
@@ -1562,11 +1659,12 @@ function schedule_next_installment_date(PDO $pdo, int $loanId, string $scheduled
         "SELECT *
          FROM loan_installments
          WHERE loan_id = :loan_id
+           AND " . tenant_scope_sql() . "
            AND status IN ('pending', 'partial', 'overdue')
          ORDER BY due_date ASC, installment_no ASC
          FOR UPDATE"
     );
-    $pendingStmt->execute(['loan_id' => $loanId]);
+    $pendingStmt->execute(tenant_scope_params(['loan_id' => $loanId]));
     $pendingInstallments = $pendingStmt->fetchAll();
 
     if (!$pendingInstallments) {
@@ -1602,7 +1700,9 @@ function schedule_next_installment_date(PDO $pdo, int $loanId, string $scheduled
     $updateStmt = $pdo->prepare(
         'UPDATE loan_installments
          SET due_date = :due_date, status = :status
-         WHERE id = :id'
+         WHERE id = :id
+           AND loan_id = :loan_id
+           AND ' . tenant_scope_sql()
     );
 
     foreach ($pendingInstallments as $index => $installment) {
@@ -1622,11 +1722,12 @@ function schedule_next_installment_date(PDO $pdo, int $loanId, string $scheduled
             ? 'paid'
             : ($installmentPaid > 0 ? 'partial' : 'pending');
 
-        $updateStmt->execute([
+        $updateStmt->execute(tenant_scope_params([
             'due_date' => $newDueDate,
             'status' => $updatedStatus,
             'id' => (int) $installment['id'],
-        ]);
+            'loan_id' => $loanId,
+        ]));
     }
 
     return [
@@ -1687,10 +1788,11 @@ function record_loan_collection_payment(
         "SELECT COALESCE(SUM(due_amount - paid_amount), 0)
          FROM loan_installments
          WHERE loan_id = :loan_id
+           AND " . tenant_scope_sql() . "
            AND status IN ('pending', 'partial', 'overdue')
            AND due_amount > paid_amount"
     );
-    $outstandingStmt->execute(['loan_id' => $loanId]);
+    $outstandingStmt->execute(tenant_scope_params(['loan_id' => $loanId]));
     $outstanding = round((float) $outstandingStmt->fetchColumn(), 2);
 
     if ($outstanding <= 0.009) {
@@ -1705,12 +1807,13 @@ function record_loan_collection_payment(
         "SELECT *
          FROM loan_installments
          WHERE loan_id = :loan_id
+           AND " . tenant_scope_sql() . "
            AND status IN ('pending', 'partial', 'overdue')
            AND due_amount > paid_amount
          ORDER BY due_date ASC, installment_no ASC
          FOR UPDATE"
     );
-    $pendingStmt->execute(['loan_id' => $loanId]);
+    $pendingStmt->execute(tenant_scope_params(['loan_id' => $loanId]));
     $pendingInstallments = $pendingStmt->fetchAll();
 
     if ($pendingInstallments === []) {
@@ -1764,15 +1867,16 @@ function record_loan_collection_payment(
              paid_on = :paid_on,
              status = 'paid'
          WHERE id = :id
-           AND loan_id = :loan_id"
+           AND loan_id = :loan_id
+           AND " . tenant_scope_sql()
     );
-    $completeSelectedStmt->execute([
+    $completeSelectedStmt->execute(tenant_scope_params([
         'due_amount' => $amount,
         'paid_amount' => $amount,
         'paid_on' => $paidOnDate,
         'id' => $selectedInstallmentId,
         'loan_id' => $loanId,
-    ]);
+    ]));
 
     $reduceTail = function (float $amountToReduce) use ($pdo, $loanId, $selectedInstallmentId, $paidOnDate, $addSnapshot): float {
         $remaining = round($amountToReduce, 2);
@@ -1787,33 +1891,36 @@ function record_loan_collection_payment(
                AND id <> :selected_id
                AND status IN ('pending', 'partial', 'overdue')
                AND due_amount > paid_amount
+               AND " . tenant_scope_sql() . "
              ORDER BY installment_no DESC
              LIMIT 1
              FOR UPDATE"
         );
-        $collectionLinkStmt = $pdo->prepare('SELECT COUNT(*) FROM collections WHERE installment_id = :installment_id');
-        $deleteTailStmt = $pdo->prepare('DELETE FROM loan_installments WHERE id = :id AND loan_id = :loan_id');
+        $collectionLinkStmt = $pdo->prepare('SELECT COUNT(*) FROM collections WHERE installment_id = :installment_id AND ' . tenant_scope_sql());
+        $deleteTailStmt = $pdo->prepare('DELETE FROM loan_installments WHERE id = :id AND loan_id = :loan_id AND ' . tenant_scope_sql());
         $closeTailStmt = $pdo->prepare(
             "UPDATE loan_installments
              SET due_amount = paid_amount,
                  paid_on = COALESCE(paid_on, :paid_on),
                  status = 'paid'
              WHERE id = :id
-               AND loan_id = :loan_id"
+               AND loan_id = :loan_id
+               AND " . tenant_scope_sql()
         );
         $shrinkTailStmt = $pdo->prepare(
             'UPDATE loan_installments
              SET due_amount = :due_amount,
                  status = :status
              WHERE id = :id
-               AND loan_id = :loan_id'
+               AND loan_id = :loan_id
+               AND ' . tenant_scope_sql()
         );
 
         while ($remaining > 0.009) {
-            $tailStmt->execute([
+            $tailStmt->execute(tenant_scope_params([
                 'loan_id' => $loanId,
                 'selected_id' => $selectedInstallmentId,
-            ]);
+            ]));
             $tail = $tailStmt->fetch();
             if (!$tail) {
                 break;
@@ -1826,20 +1933,20 @@ function record_loan_collection_payment(
 
             $addSnapshot($tail, true);
             if ($remaining + 0.009 >= $tailBalance) {
-                $collectionLinkStmt->execute(['installment_id' => (int) $tail['id']]);
+                $collectionLinkStmt->execute(tenant_scope_params(['installment_id' => (int) $tail['id']]));
                 $hasLinkedCollections = (int) $collectionLinkStmt->fetchColumn() > 0;
 
                 if ($hasLinkedCollections) {
-                    $closeTailStmt->execute([
+                    $closeTailStmt->execute(tenant_scope_params([
                         'paid_on' => $paidOnDate,
                         'id' => (int) $tail['id'],
                         'loan_id' => $loanId,
-                    ]);
+                    ]));
                 } else {
-                    $deleteTailStmt->execute([
+                    $deleteTailStmt->execute(tenant_scope_params([
                         'id' => (int) $tail['id'],
                         'loan_id' => $loanId,
-                    ]);
+                    ]));
                 }
 
                 $remaining = round($remaining - $tailBalance, 2);
@@ -1848,12 +1955,12 @@ function record_loan_collection_payment(
 
             $newDueAmount = round((float) $tail['due_amount'] - $remaining, 2);
             $newStatus = (string) $tail['due_date'] < today() ? 'overdue' : 'pending';
-            $shrinkTailStmt->execute([
+            $shrinkTailStmt->execute(tenant_scope_params([
                 'due_amount' => $newDueAmount,
                 'status' => $newStatus,
                 'id' => (int) $tail['id'],
                 'loan_id' => $loanId,
-            ]);
+            ]));
             $remaining = 0.0;
         }
 
@@ -1873,14 +1980,15 @@ function record_loan_collection_payment(
                AND id <> :selected_id
                AND status IN ('pending', 'partial', 'overdue')
                AND due_amount > paid_amount
+               AND " . tenant_scope_sql() . "
              ORDER BY installment_no DESC
              LIMIT 1
              FOR UPDATE"
         );
-        $tailStmt->execute([
+        $tailStmt->execute(tenant_scope_params([
             'loan_id' => $loanId,
             'selected_id' => $selectedInstallmentId,
-        ]);
+        ]));
         $tail = $tailStmt->fetch();
 
         if ($tail) {
@@ -1891,14 +1999,15 @@ function record_loan_collection_payment(
                  SET due_amount = :due_amount,
                      status = :status
                  WHERE id = :id
-                   AND loan_id = :loan_id'
+                   AND loan_id = :loan_id
+                   AND ' . tenant_scope_sql()
             );
-            $updateTail->execute([
+            $updateTail->execute(tenant_scope_params([
                 'due_amount' => round((float) $tail['due_amount'] + $shortfall, 2),
                 'status' => $status,
                 'id' => (int) $tail['id'],
                 'loan_id' => $loanId,
-            ]);
+            ]));
             return;
         }
 
@@ -1906,11 +2015,12 @@ function record_loan_collection_payment(
             'SELECT installment_no, due_date
              FROM loan_installments
              WHERE loan_id = :loan_id
+               AND ' . tenant_scope_sql() . '
              ORDER BY installment_no DESC
              LIMIT 1
              FOR UPDATE'
         );
-        $lastStmt->execute(['loan_id' => $loanId]);
+        $lastStmt->execute(tenant_scope_params(['loan_id' => $loanId]));
         $last = $lastStmt->fetch();
 
         $nextNo = ((int) ($last['installment_no'] ?? 0)) + 1;
@@ -1951,12 +2061,13 @@ function record_loan_collection_payment(
         "SELECT *
          FROM loan_installments
          WHERE loan_id = :loan_id
+           AND " . tenant_scope_sql() . "
            AND status IN ('pending', 'partial', 'overdue')
            AND due_amount > paid_amount
          ORDER BY installment_no ASC
          FOR UPDATE"
     );
-    $remainingStmt->execute(['loan_id' => $loanId]);
+    $remainingStmt->execute(tenant_scope_params(['loan_id' => $loanId]));
     $remainingInstallments = $remainingStmt->fetchAll();
 
     if ($remainingInstallments !== []) {
@@ -1971,7 +2082,8 @@ function record_loan_collection_payment(
             'UPDATE loan_installments
              SET due_date = :due_date,
                  status = :status
-             WHERE id = :id'
+             WHERE id = :id
+               AND tenant_id = :tenant_id'
         );
 
         foreach ($remainingInstallments as $installment) {
@@ -1980,11 +2092,11 @@ function record_loan_collection_payment(
 
             if ((string) $installment['due_date'] !== $newDueDate || (string) $installment['status'] !== $newStatus) {
                 $addSnapshot($installment, true);
-                $updateScheduleStmt->execute([
+                $updateScheduleStmt->execute(tenant_scope_params([
                     'due_date' => $newDueDate,
                     'status' => $newStatus,
                     'id' => (int) $installment['id'],
-                ]);
+                ]));
                 $rescheduledCount++;
             }
 
@@ -2007,23 +2119,25 @@ function record_loan_collection_payment(
             'UPDATE collections
              SET meta_json = :meta_json
              WHERE loan_id = :loan_id
-               AND payment_ref = :payment_ref'
+               AND payment_ref = :payment_ref
+               AND ' . tenant_scope_sql()
         );
-        $metaStmt->execute([
+        $metaStmt->execute(tenant_scope_params([
             'meta_json' => $metaJson,
             'loan_id' => $loanId,
             'payment_ref' => $paymentRef,
-        ]);
+        ]));
     }
 
     $pendingCountStmt = $pdo->prepare(
         "SELECT COUNT(*)
          FROM loan_installments
          WHERE loan_id = :loan_id
+           AND " . tenant_scope_sql() . "
            AND status IN ('pending', 'partial', 'overdue')
            AND due_amount > paid_amount"
     );
-    $pendingCountStmt->execute(['loan_id' => $loanId]);
+    $pendingCountStmt->execute(tenant_scope_params(['loan_id' => $loanId]));
 
     return [
         'pending_count' => (int) $pendingCountStmt->fetchColumn(),
@@ -2043,13 +2157,14 @@ function append_collection_payment_snapshots(PDO $pdo, int $loanId, string $paym
          FROM collections
          WHERE loan_id = :loan_id
            AND payment_ref = :payment_ref
+           AND ' . tenant_scope_sql() . '
          ORDER BY id ASC
          LIMIT 1'
     );
-    $metaStmt->execute([
+    $metaStmt->execute(tenant_scope_params([
         'loan_id' => $loanId,
         'payment_ref' => $paymentRef,
-    ]);
+    ]));
     $meta = json_decode((string) $metaStmt->fetchColumn(), true);
     if (!is_array($meta)) {
         $meta = [];
@@ -2100,13 +2215,14 @@ function append_collection_payment_snapshots(PDO $pdo, int $loanId, string $paym
         'UPDATE collections
          SET meta_json = :meta_json
          WHERE loan_id = :loan_id
-           AND payment_ref = :payment_ref'
+           AND payment_ref = :payment_ref
+           AND ' . tenant_scope_sql()
     );
-    $updateStmt->execute([
+    $updateStmt->execute(tenant_scope_params([
         'meta_json' => $metaJson,
         'loan_id' => $loanId,
         'payment_ref' => $paymentRef,
-    ]);
+    ]));
 }
 
 function undo_collection_payment(PDO $pdo, int $collectionId, int $actorUserId, string $actorRole): array
@@ -2189,16 +2305,17 @@ function undo_collection_payment(PDO $pdo, int $collectionId, int $actorUserId, 
     $deleteCollectionsStmt = $pdo->prepare(
         'DELETE FROM collections
          WHERE loan_id = :loan_id
-           AND payment_ref = :payment_ref'
+           AND payment_ref = :payment_ref
+           AND ' . tenant_scope_sql()
     );
-    $deleteCollectionsStmt->execute([
+    $deleteCollectionsStmt->execute(tenant_scope_params([
         'loan_id' => $loanId,
         'payment_ref' => $paymentRef,
-    ]);
+    ]));
 
-    $collectionLinkStmt = $pdo->prepare('SELECT COUNT(*) FROM collections WHERE installment_id = :installment_id');
-    $deleteInstallmentStmt = $pdo->prepare('DELETE FROM loan_installments WHERE id = :id AND loan_id = :loan_id');
-    $existsInstallmentStmt = $pdo->prepare('SELECT COUNT(*) FROM loan_installments WHERE id = :id');
+    $collectionLinkStmt = $pdo->prepare('SELECT COUNT(*) FROM collections WHERE installment_id = :installment_id AND ' . tenant_scope_sql());
+    $deleteInstallmentStmt = $pdo->prepare('DELETE FROM loan_installments WHERE id = :id AND loan_id = :loan_id AND ' . tenant_scope_sql());
+    $existsInstallmentStmt = $pdo->prepare('SELECT COUNT(*) FROM loan_installments WHERE id = :id AND ' . tenant_scope_sql());
     $updateInstallmentStmt = $pdo->prepare(
         'UPDATE loan_installments
          SET loan_id = :loan_id,
@@ -2210,7 +2327,8 @@ function undo_collection_payment(PDO $pdo, int $collectionId, int $actorUserId, 
              status = :status,
              is_flexible_adjustment = :is_flexible_adjustment,
              source_payment_ref = :source_payment_ref
-         WHERE id = :id'
+         WHERE id = :id
+           AND tenant_id = :tenant_id'
     );
     $insertInstallmentStmt = $pdo->prepare(
         'INSERT INTO loan_installments
@@ -2234,15 +2352,15 @@ function undo_collection_payment(PDO $pdo, int $collectionId, int $actorUserId, 
         }
 
         if (!$existsBefore) {
-            $collectionLinkStmt->execute(['installment_id' => $installmentId]);
+            $collectionLinkStmt->execute(tenant_scope_params(['installment_id' => $installmentId]));
             if ((int) $collectionLinkStmt->fetchColumn() > 0) {
                 throw new RuntimeException('Cannot undo because a generated installment has later collections.');
             }
 
-            $deleteInstallmentStmt->execute([
+            $deleteInstallmentStmt->execute(tenant_scope_params([
                 'id' => $installmentId,
                 'loan_id' => $loanId,
-            ]);
+            ]));
             continue;
         }
 
@@ -2274,7 +2392,7 @@ function undo_collection_payment(PDO $pdo, int $collectionId, int $actorUserId, 
             throw new RuntimeException('Cannot undo because an installment snapshot is invalid.');
         }
 
-        $existsInstallmentStmt->execute(['id' => $installmentId]);
+        $existsInstallmentStmt->execute(tenant_scope_params(['id' => $installmentId]));
         if ((int) $existsInstallmentStmt->fetchColumn() > 0) {
             $updateInstallmentStmt->execute($params);
         } else {
@@ -2287,17 +2405,18 @@ function undo_collection_payment(PDO $pdo, int $collectionId, int $actorUserId, 
          FROM loan_installments
          WHERE loan_id = :loan_id
            AND status IN ('pending', 'partial', 'overdue')
-           AND due_amount > paid_amount"
+           AND due_amount > paid_amount
+           AND " . tenant_scope_sql()
     );
-    $pendingCountStmt->execute(['loan_id' => $loanId]);
+    $pendingCountStmt->execute(tenant_scope_params(['loan_id' => $loanId]));
     $pendingCount = (int) $pendingCountStmt->fetchColumn();
 
     if ($pendingCount === 0) {
-        $closeLoan = $pdo->prepare("UPDATE loans SET status = 'closed' WHERE id = :id");
-        $closeLoan->execute(['id' => $loanId]);
+        $closeLoan = $pdo->prepare("UPDATE loans SET status = 'closed' WHERE id = :id AND " . tenant_scope_sql());
+        $closeLoan->execute(tenant_scope_params(['id' => $loanId]));
     } else {
-        $reopenLoan = $pdo->prepare("UPDATE loans SET status = 'active' WHERE id = :id");
-        $reopenLoan->execute(['id' => $loanId]);
+        $reopenLoan = $pdo->prepare("UPDATE loans SET status = 'active' WHERE id = :id AND " . tenant_scope_sql());
+        $reopenLoan->execute(tenant_scope_params(['id' => $loanId]));
     }
 
     return [
@@ -2494,7 +2613,7 @@ function ensure_user_permissions_schema(PDO $pdo): void
         )"
     );
 
-    $pdo->exec("DELETE FROM user_permissions WHERE permission_key IN ('customers.view_all', 'loans.extend')");
+    $pdo->exec("DELETE FROM user_permissions WHERE permission_key IN ('customers.view_all', 'loans.extend', 'system_settings.manage')");
 
     $validKeys = permission_keys();
     if ($validKeys === []) {
@@ -2597,38 +2716,54 @@ function ensure_user_email_schema(PDO $pdo): void
     // Normalize blanks before adding a unique key.
     $pdo->exec("UPDATE users SET email = NULL WHERE email IS NOT NULL AND TRIM(email) = ''");
 
-    $indexStmt = $pdo->prepare(
-        "SELECT COUNT(*) FROM information_schema.statistics
-         WHERE table_schema = DATABASE() AND table_name = 'users' AND index_name = 'uq_users_email'"
-    );
-    $indexStmt->execute();
-    $hasIndex = (int) $indexStmt->fetchColumn() > 0;
-    if (!$hasIndex) {
-        $duplicateStmt = $pdo->query(
+    ensure_user_login_identity_schema($pdo);
+}
+
+function ensure_user_login_identity_schema(PDO $pdo): void
+{
+    if (table_has_index($pdo, 'users', 'uq_users_tenant_username')) {
+        safe_exec_schema($pdo, 'ALTER TABLE users DROP INDEX uq_users_tenant_username');
+    }
+
+    if (table_has_index($pdo, 'users', 'uq_users_tenant_email')) {
+        safe_exec_schema($pdo, 'ALTER TABLE users DROP INDEX uq_users_tenant_email');
+    }
+
+    if (!table_has_index($pdo, 'users', 'username')) {
+        $duplicateUsernameCount = (int) $pdo->query(
+            "SELECT COUNT(*) FROM (
+                SELECT username
+                FROM users
+                GROUP BY username
+                HAVING COUNT(*) > 1
+            ) duplicate_usernames"
+        )->fetchColumn();
+
+        if ($duplicateUsernameCount === 0) {
+            safe_exec_schema($pdo, 'ALTER TABLE users ADD UNIQUE KEY username (username)');
+        } else {
+            error_log('Skipped users username unique key migration: duplicate usernames exist.');
+        }
+    }
+
+    if (!table_has_index($pdo, 'users', 'uq_users_email')) {
+        $duplicateEmailCount = (int) $pdo->query(
             "SELECT COUNT(*) FROM (
                 SELECT LOWER(TRIM(email)) AS normalized_email
                 FROM users
                 WHERE email IS NOT NULL AND TRIM(email) <> ''
                 GROUP BY LOWER(TRIM(email))
                 HAVING COUNT(*) > 1
-            ) AS duplicate_emails"
-        );
-        $hasDuplicates = (int) $duplicateStmt->fetchColumn() > 0;
+            ) duplicate_emails"
+        )->fetchColumn();
 
-        if ($hasDuplicates) {
+        if ($duplicateEmailCount === 0) {
+            safe_exec_schema($pdo, 'ALTER TABLE users ADD UNIQUE KEY uq_users_email (email)');
+        } else {
             error_log('Skipped users email unique key migration: duplicate emails exist.');
-            return;
-        }
-
-        try {
-            $pdo->exec('ALTER TABLE users ADD UNIQUE KEY uq_users_email (email)');
-        } catch (PDOException $e) {
-            // Never break bootstrap on runtime migration mismatch.
-            error_log('Failed to add users email unique key at startup: ' . $e->getMessage());
         }
     }
 }
-
 function ensure_user_status_schema(PDO $pdo): void
 {
     $statusColStmt = $pdo->query("SHOW COLUMNS FROM users LIKE 'status'");
@@ -3020,6 +3155,7 @@ function ensure_customer_documents_schema(PDO $pdo): void
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS customer_documents (
             id INT AUTO_INCREMENT PRIMARY KEY,
+            tenant_id INT NOT NULL,
             customer_id INT NOT NULL,
             original_name VARCHAR(255) NOT NULL,
             stored_name VARCHAR(255) NOT NULL,
@@ -3028,8 +3164,10 @@ function ensure_customer_documents_schema(PDO $pdo): void
             file_size INT UNSIGNED NOT NULL,
             uploaded_by_user_id INT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_customer_documents_tenant_id (tenant_id),
             INDEX idx_customer_documents_customer_id (customer_id),
             INDEX idx_customer_documents_uploaded_by (uploaded_by_user_id),
+            CONSTRAINT fk_customer_documents_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
             CONSTRAINT fk_customer_documents_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
             CONSTRAINT fk_customer_documents_uploaded_by FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id) ON DELETE SET NULL
         )"
@@ -3050,10 +3188,12 @@ function ensure_system_settings_schema(PDO $pdo): void
 {
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS system_settings (
-            setting_key VARCHAR(100) PRIMARY KEY,
+            tenant_id INT NOT NULL DEFAULT 0,
+            setting_key VARCHAR(100) NOT NULL,
             setting_value TEXT NULL,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             updated_by_user_id INT NULL,
+            PRIMARY KEY (tenant_id, setting_key),
             INDEX idx_system_settings_updated_by (updated_by_user_id),
             CONSTRAINT fk_system_settings_updated_by FOREIGN KEY (updated_by_user_id) REFERENCES users(id) ON DELETE SET NULL
         )"
@@ -3072,12 +3212,14 @@ function ensure_holidays_schema(PDO $pdo): void
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS holidays (
             id INT AUTO_INCREMENT PRIMARY KEY,
+            tenant_id INT NOT NULL,
             holiday_date DATE NOT NULL,
             note VARCHAR(255) NULL,
             created_by_user_id INT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE KEY uq_holidays_holiday_date (holiday_date),
+            UNIQUE KEY uq_holidays_tenant_date (tenant_id, holiday_date),
             INDEX idx_holidays_created_by (created_by_user_id),
+            CONSTRAINT fk_holidays_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
             CONSTRAINT fk_holidays_created_by FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
         )"
     );
@@ -3433,6 +3575,16 @@ function business_icon_upload_dir_rel(): string
     return 'uploads/business_icons';
 }
 
+function profile_avatar_upload_dir_abs(): string
+{
+    return dirname(__DIR__) . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'profile_avatars';
+}
+
+function profile_avatar_upload_dir_rel(): string
+{
+    return 'uploads/profile_avatars';
+}
+
 function business_icon_path(PDO $pdo): string
 {
     $path = trim(system_setting($pdo, 'business_icon_path', ''));
@@ -3465,12 +3617,44 @@ function ensure_customer_docs_guard_file(string $uploadDirAbs): void
     @file_put_contents($guardPath, $guardContents);
 }
 
+function ensure_public_upload_guard_file(string $uploadDirAbs): void
+{
+    if (!is_dir($uploadDirAbs)) {
+        return;
+    }
+
+    $guardPath = $uploadDirAbs . DIRECTORY_SEPARATOR . '.htaccess';
+    $guardContents = "<FilesMatch \"\\.(php[0-9]?|phtml|phar|cgi|pl|py|sh|asp|aspx|jsp)$\">\n<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n    Deny from all\n</IfModule>\n</FilesMatch>\n";
+
+    if (is_file($guardPath) && @file_get_contents($guardPath) === $guardContents) {
+        return;
+    }
+
+    @file_put_contents($guardPath, $guardContents);
+}
+
 function store_customer_documents(PDO $pdo, int $customerId, string $customerCode, ?array $filesInput, int $uploadedByUserId = 0): int
 {
     $files = normalize_uploaded_files($filesInput);
     if (empty($files)) {
         return 0;
     }
+
+    $tenantId = current_tenant_id();
+    if ($tenantId === null || $tenantId <= 0) {
+        throw new RuntimeException('Missing tenant context for document upload.');
+    }
+
+    $customerStmt = $pdo->prepare('SELECT customer_code FROM customers WHERE id = :id AND tenant_id = :tenant_id LIMIT 1');
+    $customerStmt->execute([
+        'id' => $customerId,
+        'tenant_id' => $tenantId,
+    ]);
+    $storedCustomerCode = $customerStmt->fetchColumn();
+    if ($storedCustomerCode === false) {
+        throw new RuntimeException('Customer not found for document upload.');
+    }
+    $customerCode = (string) $storedCustomerCode;
 
     $allowedMimes = [
         'image/jpeg' => 'jpg',
@@ -3552,11 +3736,6 @@ function store_customer_documents(PDO $pdo, int $customerId, string $customerCod
                 throw new RuntimeException('Failed to store uploaded document.');
             }
             $movedAbsPaths[] = $absPath;
-
-            $tenantId = current_tenant_id() ?? 0;
-            if ($tenantId <= 0) {
-                throw new RuntimeException('Missing tenant context for document upload.');
-            }
 
             $insertStmt->bindValue(':tenant_id', $tenantId, PDO::PARAM_INT);
             $insertStmt->bindValue(':customer_id', $customerId, PDO::PARAM_INT);
@@ -4235,6 +4414,18 @@ function user_permission_keys(PDO $pdo, int $userId): array
         return [];
     }
 
+    $tenantId = current_tenant_id();
+    if ($tenantId !== null) {
+        $userStmt = $pdo->prepare('SELECT 1 FROM users WHERE id = :id AND tenant_id = :tenant_id LIMIT 1');
+        $userStmt->execute([
+            'id' => $userId,
+            'tenant_id' => $tenantId,
+        ]);
+        if (!$userStmt->fetchColumn()) {
+            return [];
+        }
+    }
+
     $stmt = $pdo->prepare('SELECT permission_key FROM user_permissions WHERE user_id = :user_id AND allowed = 1');
     $stmt->execute(['user_id' => $userId]);
 
@@ -4245,6 +4436,18 @@ function sync_user_permissions(PDO $pdo, int $userId, array $permissionKeys): vo
 {
     if ($userId <= 0) {
         return;
+    }
+
+    $tenantId = current_tenant_id();
+    if ($tenantId !== null) {
+        $userStmt = $pdo->prepare('SELECT 1 FROM users WHERE id = :id AND tenant_id = :tenant_id LIMIT 1');
+        $userStmt->execute([
+            'id' => $userId,
+            'tenant_id' => $tenantId,
+        ]);
+        if (!$userStmt->fetchColumn()) {
+            throw new RuntimeException('User not found in current business.');
+        }
     }
 
     $permissionKeys = normalize_permission_keys($permissionKeys);
@@ -4400,8 +4603,8 @@ function can(string $permissionKey, ?array $viewer = null): bool
         return false;
     }
 
-    if ($permissionKey === 'system_settings.manage' && is_tenant_owner($viewer)) {
-        return true;
+    if ($permissionKey === 'system_settings.manage') {
+        return is_tenant_owner($viewer);
     }
 
     if (is_owner($viewer)) {

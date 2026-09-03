@@ -28,12 +28,8 @@ if ($newPassword !== $confirmPassword) {
     redirect('reset_password.php?token=' . urlencode($token));
 }
 
-if (
-    strlen($newPassword) < 8
-    || preg_match('/[A-Za-z]/', $newPassword) !== 1
-    || preg_match('/\d/', $newPassword) !== 1
-) {
-    set_flash('error', 'Password must be at least 8 characters and include at least one letter and one number.');
+if (!password_meets_policy($newPassword)) {
+    set_flash('error', password_policy_message());
     redirect('reset_password.php?token=' . urlencode($token));
 }
 

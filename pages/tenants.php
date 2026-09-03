@@ -6,7 +6,7 @@ require_once __DIR__ . '/../includes/bootstrap.php';
 
 require_platform_owner();
 
-$pageTitle = 'Tenants';
+$pageTitle = 'Businesses';
 $activePage = 'tenants';
 $statusFilter = trim((string) ($_GET['status'] ?? ''));
 $validStatuses = ['pending', 'approved', 'rejected', 'suspended', 'deleted'];
@@ -44,7 +44,7 @@ require __DIR__ . '/../includes/layout_start.php';
     <form method="get" action="<?= e(url('pages/tenants.php')) ?>" class="tenant-filter-form tenant-filter-form-inline">
         <div class="field full">
             <select id="tenant-status-filter" name="status" onchange="this.form.submit()">
-                <option value="" <?= $statusFilter === '' ? 'selected' : '' ?>>All tenants</option>
+                <option value="" <?= $statusFilter === '' ? 'selected' : '' ?>>All businesses</option>
                 <?php foreach ($validStatuses as $status): ?>
                     <option value="<?= e($status) ?>" <?= $statusFilter === $status ? 'selected' : '' ?>><?= e(ucfirst($status)) ?></option>
                 <?php endforeach; ?>
@@ -58,7 +58,7 @@ require __DIR__ . '/../includes/layout_start.php';
         <span class="btn-icon-inline" aria-hidden="true">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
         </span>
-        Create Tenant
+        Create Business
     </a>
 </div>
 
@@ -67,7 +67,8 @@ require __DIR__ . '/../includes/layout_start.php';
         <table class="zebra-table users-directory-table">
             <thead>
             <tr>
-                <th>Tenant</th>
+                <th>Business</th>
+
                 <th>Owner</th>
                 <th>Status</th>
                 <th>Users</th>
@@ -79,7 +80,7 @@ require __DIR__ . '/../includes/layout_start.php';
             </thead>
             <tbody>
             <?php if (!$tenants): ?>
-                <tr><td colspan="8">No tenants found.</td></tr>
+                <tr><td colspan="8">No businesses found.</td></tr>
             <?php else: ?>
                 <?php foreach ($tenants as $tenant): ?>
                     <?php
@@ -87,10 +88,11 @@ require __DIR__ . '/../includes/layout_start.php';
                     $status = (string) $tenant['status'];
                     ?>
                     <tr>
-                        <td data-label="Tenant">
+                        <td data-label="Business">
                             <strong><?= e((string) $tenant['name']) ?></strong>
                             <div class="muted-text"><?= e((string) $tenant['slug']) ?></div>
                         </td>
+
                         <td data-label="Owner">
                             <?= e((string) ($tenant['owner_name'] ?? '-')) ?>
                             <div class="muted-text"><?= e((string) ($tenant['owner_email'] ?? '')) ?></div>
@@ -113,7 +115,7 @@ require __DIR__ . '/../includes/layout_start.php';
                                     <?php endif; ?>
                                 <?php endforeach; ?>
                                 <?php if ($status !== 'deleted'): ?>
-                                    <form method="post" action="<?= e(url('actions/tenant_delete.php')) ?>" data-confirm="Delete this tenant? This will hide it and block tenant login.">
+                                    <form method="post" action="<?= e(url('actions/tenant_delete.php')) ?>" data-confirm="Delete this business? This will hide it and block business login.">
                                         <?= csrf_input() ?>
                                         <input type="hidden" name="tenant_id" value="<?= e((string) $tenantId) ?>">
                                         <button class="btn btn-danger" type="submit">Delete</button>

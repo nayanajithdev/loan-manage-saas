@@ -35,7 +35,7 @@ $rememberTenantCreateInput = static function () use (&$name, &$slug, &$ownerName
 
 if ($name === '' || $ownerName === '' || $ownerEmail === '' || $username === '' || $password === '') {
     $rememberTenantCreateInput();
-    set_flash('error', 'Tenant name, owner details, username, and password are required.');
+    set_flash('error', 'Business name, owner details, username, and password are required.');
     redirect('pages/tenant_create.php');
 }
 
@@ -45,9 +45,9 @@ if (!filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) {
     redirect('pages/tenant_create.php');
 }
 
-if (strlen($password) < 6) {
+if (!password_meets_policy($password)) {
     $rememberTenantCreateInput();
-    set_flash('error', 'Password must be at least 6 characters.');
+    set_flash('error', password_policy_message());
     redirect('pages/tenant_create.php');
 }
 
@@ -61,18 +61,23 @@ $existsStmt = $pdo->prepare('SELECT id FROM tenants WHERE slug = :slug LIMIT 1')
 $existsStmt->execute(['slug' => $slug]);
 if ($existsStmt->fetch()) {
     $rememberTenantCreateInput();
-    set_flash('error', 'Tenant slug already exists.');
+    set_flash('error', 'Business slug already exists.');
     redirect('pages/tenant_create.php');
 }
 
-$userStmt = $pdo->prepare('SELECT id FROM users WHERE username = :username OR email = :email LIMIT 1');
-$userStmt->execute([
-    'username' => $username,
-    'email' => $ownerEmail,
-]);
-if ($userStmt->fetch()) {
+$usernameStmt = $pdo->prepare('SELECT id FROM users WHERE username = :username LIMIT 1');
+$usernameStmt->execute(['username' => $username]);
+if ($usernameStmt->fetch()) {
     $rememberTenantCreateInput();
-    set_flash('error', 'Owner username or owner email already exists.');
+    set_flash('error', 'Username already exists.');
+    redirect('pages/tenant_create.php');
+}
+
+$emailStmt = $pdo->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
+$emailStmt->execute(['email' => $ownerEmail]);
+if ($emailStmt->fetch()) {
+    $rememberTenantCreateInput();
+    set_flash('error', 'Email already exists.');
     redirect('pages/tenant_create.php');
 }
 
@@ -130,16 +135,16 @@ try {
 } catch (Throwable $e) {
     $pdo->rollBack();
     $rememberTenantCreateInput();
-    set_flash('error', 'Failed to create tenant.');
+    set_flash('error', 'Failed to create business. Please try again.');
     redirect('pages/tenant_create.php');
 }
 
-log_activity($pdo, 'tenant.created', 'Tenant created: ' . $name . '.', [
+log_activity($pdo, 'tenant.created', 'Business created: ' . $name . '.', [
     'tenant_id' => $tenantId,
     'tenant_slug' => $slug,
     'status' => $status,
 ]);
 
 unset($_SESSION['tenant_create_old_input']);
-set_flash('success', 'Tenant created successfully.');
+set_flash('success', 'Business created successfully.');
 redirect('pages/tenants.php');

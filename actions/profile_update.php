@@ -66,7 +66,6 @@ if ($emailStmt->fetch()) {
     set_flash('error', 'Email already exists.');
     redirect('pages/profile.php');
 }
-
 $avatarPathToSave = (string) ($user['avatar_path'] ?? '');
 $oldAvatarPath = $avatarPathToSave;
 
@@ -103,11 +102,12 @@ if (isset($_FILES['avatar']) && is_array($_FILES['avatar']) && (int) ($_FILES['a
         redirect('pages/profile.php');
     }
 
-    $uploadDirAbs = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'profile_avatars';
+    $uploadDirAbs = profile_avatar_upload_dir_abs();
     if (!is_dir($uploadDirAbs) && !mkdir($uploadDirAbs, 0775, true) && !is_dir($uploadDirAbs)) {
         set_flash('error', 'Failed to create avatar folder.');
         redirect('pages/profile.php');
     }
+    ensure_public_upload_guard_file($uploadDirAbs);
 
     try {
         $random = bin2hex(random_bytes(4));
@@ -116,7 +116,7 @@ if (isset($_FILES['avatar']) && is_array($_FILES['avatar']) && (int) ($_FILES['a
     }
     $fileName = 'user_' . $userId . '_' . date('YmdHis') . '_' . $random . '.' . $ext;
     $targetAbs = $uploadDirAbs . DIRECTORY_SEPARATOR . $fileName;
-    $targetRel = 'uploads/profile_avatars/' . $fileName;
+    $targetRel = profile_avatar_upload_dir_rel() . '/' . $fileName;
 
     if (!move_uploaded_file($tmpName, $targetAbs)) {
         set_flash('error', 'Failed to store avatar.');

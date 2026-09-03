@@ -12,6 +12,8 @@ return [
     'auth_login_max_attempts' => '5',
     'auth_login_window_seconds' => '900',
     'auth_login_lock_seconds' => '900',
+    // Optional: comma-separated proxy IPs/CIDRs allowed to supply forwarded client IP headers.
+    'trusted_proxy_ips' => '',
 
     // Optional: password reset email settings.
     // Copy this file to database.local.php and replace these values with your SMTP account.

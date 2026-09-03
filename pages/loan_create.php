@@ -12,7 +12,11 @@ require_tenant_context();
 $pageTitle = 'Create Loan';
 $activePage = 'loans';
 $canCreateCustomer = can('customers.create');
-$customerStmt = $pdo->prepare("SELECT id, customer_code, full_name, nic FROM customers WHERE status = 'active' AND " . tenant_scope_sql() . " ORDER BY full_name ASC");
+$canViewCustomer = can('customers.view');
+$customerSql = $canViewCustomer
+    ? "SELECT id, customer_code, full_name, nic FROM customers WHERE status = 'active' AND " . tenant_scope_sql() . " ORDER BY full_name ASC"
+    : "SELECT id, customer_code FROM customers WHERE status = 'active' AND " . tenant_scope_sql() . " ORDER BY customer_code ASC, id ASC";
+$customerStmt = $pdo->prepare($customerSql);
 $customerStmt->execute(tenant_scope_params());
 $customers = $customerStmt->fetchAll();
 $routes = route_options($pdo);
@@ -131,7 +135,7 @@ require __DIR__ . '/../includes/layout_start.php';
                             <div class="searchable-select-menu" data-select-menu hidden>
                                 <?php foreach ($customers as $customer): ?>
                                     <button type="button" data-select-option value="<?= e((string) $customer['id']) ?>">
-                                        <?= e(customer_display_label($customer)) ?>
+                                        <?= e($canViewCustomer ? customer_display_label($customer) : loan_customer_display_label($customer)) ?>
                                     </button>
                                 <?php endforeach; ?>
                             </div>

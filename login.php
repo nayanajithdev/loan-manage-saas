@@ -32,7 +32,7 @@ if ($loginBusinessName === '') {
 <div class="auth-shell">
     <section class="auth-card">
         <h1><?= e($loginBusinessName) ?></h1>
-        <p class="auth-sub">Tenant login</p>
+        <p class="auth-sub">Business login</p>
 
         <?php if ($flash): ?>
             <div class="flash flash-<?= e($flash['type']) ?>"><?= e($flash['message']) ?></div>
@@ -42,7 +42,7 @@ if ($loginBusinessName === '') {
             <?= csrf_input() ?>
             <div class="field full">
                 <label>Username</label>
-                <input type="text" name="username" required autofocus>
+                <input type="text" name="username" autocomplete="username" required autofocus>
             </div>
             <div class="field full">
                 <label>Password</label>
@@ -62,8 +62,8 @@ if ($loginBusinessName === '') {
                 <button type="submit" class="btn btn-primary">Login</button>
             </div>
             <div class="field full auth-register-row">
-                <span>Need a tenant account?</span>
-                <a class="auth-link" href="<?= e(url('register.php')) ?>">Register tenant</a>
+                <span>Need a business account?</span>
+                <a class="auth-link" href="<?= e(url('register.php')) ?>">Register business</a>
             </div>
         </form>
     </section>

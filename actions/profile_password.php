@@ -29,8 +29,8 @@ if ($newPassword !== $confirmPassword) {
     redirect('pages/profile.php');
 }
 
-if (strlen($newPassword) < 6) {
-    set_flash('error', 'New password must be at least 6 characters.');
+if (!password_meets_policy($newPassword)) {
+    set_flash('error', password_policy_message('New password'));
     redirect('pages/profile.php');
 }
 

@@ -73,6 +73,221 @@ function copy_tree_contents(string $fromDir, string $toDir): int
     return $copied;
 }
 
+const RESTORE_MAX_SQL_BYTES = 157286400; // 150MB
+const RESTORE_MAX_UPLOAD_BYTES = 524288000; // 500MB uncompressed
+const RESTORE_MAX_UPLOAD_FILES = 10000;
+const RESTORE_MAX_UPLOAD_ENTRY_BYTES = 26214400; // 25MB per uploaded file
+
+function restore_sql_statements(string $sql): array
+{
+    $statements = [];
+    $statement = '';
+    $quote = null;
+    $lineComment = false;
+    $blockComment = false;
+    $length = strlen($sql);
+
+    for ($i = 0; $i < $length; $i++) {
+        $char = $sql[$i];
+        $next = $i + 1 < $length ? $sql[$i + 1] : '';
+        $statement .= $char;
+
+        if ($lineComment) {
+            if ($char === "\n") {
+                $lineComment = false;
+            }
+            continue;
+        }
+
+        if ($blockComment) {
+            if ($char === '*' && $next === '/') {
+                $statement .= $next;
+                $i++;
+                $blockComment = false;
+            }
+            continue;
+        }
+
+        if ($quote !== null) {
+            if (($quote === '\'' || $quote === '"') && $char === '\\' && $next !== '') {
+                $statement .= $next;
+                $i++;
+                continue;
+            }
+
+            if ($quote === '`' && $char === '`' && $next === '`') {
+                $statement .= $next;
+                $i++;
+                continue;
+            }
+
+            if (($quote === '\'' || $quote === '"') && $char === $quote && $next === $quote) {
+                $statement .= $next;
+                $i++;
+                continue;
+            }
+
+            if ($char === $quote) {
+                $quote = null;
+            }
+            continue;
+        }
+
+        if ($char === '-' && $next === '-') {
+            $statement .= $next;
+            $i++;
+            $lineComment = true;
+            continue;
+        }
+
+        if ($char === '#') {
+            $lineComment = true;
+            continue;
+        }
+
+        if ($char === '/' && $next === '*') {
+            $statement .= $next;
+            $i++;
+            $blockComment = true;
+            continue;
+        }
+
+        if ($char === '\'' || $char === '"' || $char === '`') {
+            $quote = $char;
+            continue;
+        }
+
+        if ($char === ';') {
+            $trimmed = trim($statement);
+            if ($trimmed !== '') {
+                $statements[] = $trimmed;
+            }
+            $statement = '';
+        }
+    }
+
+    $trimmed = trim($statement);
+    if ($trimmed !== '') {
+        $statements[] = $trimmed;
+    }
+
+    return $statements;
+}
+
+function restore_sql_strip_leading_comments(string $statement): string
+{
+    $statement = trim($statement);
+
+    while ($statement !== '') {
+        if (str_starts_with($statement, '--') || str_starts_with($statement, '#')) {
+            $newlinePos = strpos($statement, "\n");
+            if ($newlinePos === false) {
+                return '';
+            }
+            $statement = trim(substr($statement, $newlinePos + 1));
+            continue;
+        }
+
+        if (str_starts_with($statement, '/*')) {
+            $endPos = strpos($statement, '*/');
+            if ($endPos === false) {
+                return '';
+            }
+            $statement = trim(substr($statement, $endPos + 2));
+            continue;
+        }
+
+        break;
+    }
+
+    return rtrim($statement, "; \t\r\n");
+}
+
+function validate_restore_sql(string $sql): void
+{
+    if (strlen($sql) > RESTORE_MAX_SQL_BYTES) {
+        throw new RuntimeException('SQL backup is too large to restore.');
+    }
+
+    $hasRestoreStatement = false;
+    foreach (restore_sql_statements($sql) as $statement) {
+        $statement = restore_sql_strip_leading_comments($statement);
+        if ($statement === '') {
+            continue;
+        }
+
+        if (preg_match('/^SET\s+(?:SQL_MODE|FOREIGN_KEY_CHECKS)\s*=/i', $statement) === 1) {
+            continue;
+        }
+
+        if (preg_match('/^DROP\s+TABLE\s+IF\s+EXISTS\s+`[^`]+`\s*$/i', $statement) === 1) {
+            $hasRestoreStatement = true;
+            continue;
+        }
+
+        if (preg_match('/^CREATE\s+TABLE\s+`[^`]+`\s*\(/i', $statement) === 1) {
+            if (preg_match('/\)\s+SELECT\b/i', $statement) === 1) {
+                throw new RuntimeException('Unsupported SQL detected. Restore only accepts app-generated backup files.');
+            }
+            $hasRestoreStatement = true;
+            continue;
+        }
+
+        if (preg_match('/^INSERT\s+INTO\s+`[^`]+`\s*\(.+\)\s+VALUES\s*\(/is', $statement) === 1) {
+            $hasRestoreStatement = true;
+            continue;
+        }
+
+        throw new RuntimeException('Unsupported SQL detected. Restore only accepts app-generated backup files.');
+    }
+
+    if (!$hasRestoreStatement) {
+        throw new RuntimeException('No restorable SQL statements were found.');
+    }
+}
+
+function restore_zip_entry_is_safe_upload(string $relative): bool
+{
+    $extension = strtolower((string) pathinfo($relative, PATHINFO_EXTENSION));
+    return !in_array($extension, ['php', 'php3', 'php4', 'php5', 'phtml', 'phar', 'cgi', 'pl', 'py', 'sh', 'asp', 'aspx', 'jsp'], true);
+}
+
+function copy_zip_entry_with_limit($stream, string $targetAbs, int $entryMaxBytes, int $remainingMaxBytes): int
+{
+    $out = @fopen($targetAbs, 'wb');
+    if ($out === false) {
+        fclose($stream);
+        throw new RuntimeException('Failed to prepare restore file.');
+    }
+
+    $bytesWritten = 0;
+    try {
+        while (!feof($stream)) {
+            $chunk = fread($stream, 1048576);
+            if ($chunk === false) {
+                throw new RuntimeException('Failed to read ZIP backup file.');
+            }
+            if ($chunk === '') {
+                continue;
+            }
+
+            $bytesWritten += strlen($chunk);
+            if ($bytesWritten > $entryMaxBytes || $bytesWritten > $remainingMaxBytes) {
+                throw new RuntimeException('ZIP backup expands beyond the allowed restore size.');
+            }
+
+            if (fwrite($out, $chunk) === false) {
+                throw new RuntimeException('Failed to write restore file.');
+            }
+        }
+    } finally {
+        fclose($stream);
+        fclose($out);
+    }
+
+    return $bytesWritten;
+}
+
 function run_restore_sql(string $sql): void
 {
     if (!extension_loaded('mysqli')) {
@@ -163,6 +378,8 @@ try {
     $restoreMode = 'sql';
     $fullBackupTempDir = '';
     $fullBackupUploadsDir = '';
+    $restoredUploadBytes = 0;
+    $zip = null;
 
     if ($extension === 'sql') {
         $sqlRaw = file_get_contents($tmpName);
@@ -200,6 +417,13 @@ try {
             throw new RuntimeException('No SQL file found inside ZIP backup.');
         }
 
+        $sqlStat = $zip->statName($sqlEntryName);
+        $sqlEntrySize = is_array($sqlStat) ? (int) ($sqlStat['size'] ?? 0) : 0;
+        if ($sqlEntrySize <= 0 || $sqlEntrySize > RESTORE_MAX_SQL_BYTES) {
+            $zip->close();
+            throw new RuntimeException('SQL backup inside ZIP is too large to restore.');
+        }
+
         $sqlRaw = $zip->getFromName($sqlEntryName);
         if ($sqlRaw === false || trim((string) $sqlRaw) === '') {
             $zip->close();
@@ -234,36 +458,52 @@ try {
                 continue;
             }
 
+            if (!restore_zip_entry_is_safe_upload($relative)) {
+                throw new RuntimeException('Backup ZIP contains an executable upload file.');
+            }
+
+            $entryStat = $zip->statIndex($i);
+            $entrySize = is_array($entryStat) ? (int) ($entryStat['size'] ?? 0) : 0;
+            if ($entrySize < 0 || $entrySize > RESTORE_MAX_UPLOAD_ENTRY_BYTES) {
+                throw new RuntimeException('Backup ZIP contains an upload file that is too large to restore.');
+            }
+
+            if ($restoredUploads + 1 > RESTORE_MAX_UPLOAD_FILES || $restoredUploadBytes + $entrySize > RESTORE_MAX_UPLOAD_BYTES) {
+                throw new RuntimeException('Backup ZIP expands beyond the allowed restore size.');
+            }
+
             $targetAbs = $fullBackupUploadsDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
             $targetDir = dirname($targetAbs);
             if (!is_dir($targetDir) && !mkdir($targetDir, 0775, true) && !is_dir($targetDir)) {
-                continue;
+                throw new RuntimeException('Failed to prepare restore file directory.');
             }
 
             $stream = $zip->getStream($entryName);
             if ($stream === false) {
-                continue;
+                throw new RuntimeException('Failed to read ZIP backup file.');
             }
 
-            $out = @fopen($targetAbs, 'wb');
-            if ($out === false) {
-                fclose($stream);
-                continue;
+            $bytesWritten = copy_zip_entry_with_limit(
+                $stream,
+                $targetAbs,
+                RESTORE_MAX_UPLOAD_ENTRY_BYTES,
+                RESTORE_MAX_UPLOAD_BYTES - $restoredUploadBytes
+            );
+            if ($entrySize > 0 && $bytesWritten !== $entrySize) {
+                @unlink($targetAbs);
+                throw new RuntimeException('Backup ZIP upload file size mismatch.');
             }
 
-            stream_copy_to_stream($stream, $out);
-            fclose($stream);
-            fclose($out);
+            $restoredUploadBytes += $bytesWritten;
             $restoredUploads++;
         }
 
         $zip->close();
+        $zip = null;
     }
 
     $sql = preg_replace('/^\xEF\xBB\xBF/', '', $sql) ?? $sql;
-    if (preg_match('/\bDROP\s+DATABASE\b/i', $sql) || preg_match('/\bCREATE\s+DATABASE\b/i', $sql)) {
-        throw new RuntimeException('Unsafe SQL detected (database-level statements are not allowed).');
-    }
+    validate_restore_sql($sql);
 
     run_restore_sql($sql);
 
@@ -284,6 +524,8 @@ try {
             remove_tree_contents($uploadsRoot);
             copy_tree_contents($fullBackupUploadsDir, $uploadsRoot);
             ensure_customer_docs_guard_file($uploadsRoot . DIRECTORY_SEPARATOR . 'customer_docs');
+            ensure_public_upload_guard_file($uploadsRoot . DIRECTORY_SEPARATOR . 'profile_avatars');
+            ensure_public_upload_guard_file($uploadsRoot . DIRECTORY_SEPARATOR . 'business_icons');
         } catch (Throwable $fileRestoreError) {
             remove_tree_contents($uploadsRoot);
             if (is_dir($uploadsSnapshotDir)) {
@@ -298,6 +540,7 @@ try {
         'file_name' => $fileName,
         'file_size' => $size,
         'uploads_restored' => $restoredUploads ?? 0,
+        'upload_bytes_restored' => $restoredUploadBytes ?? 0,
     ]);
     set_flash('success', $restoreMode === 'full'
         ? 'Full backup restored successfully (database + files).'
@@ -313,6 +556,10 @@ try {
     ]);
     set_flash('error', $message);
 } finally {
+    if (isset($zip) && $zip instanceof ZipArchive) {
+        @$zip->close();
+    }
+
     if (isset($fullBackupTempDir) && $fullBackupTempDir !== '' && is_dir($fullBackupTempDir)) {
         remove_tree_contents($fullBackupTempDir);
         @rmdir($fullBackupTempDir);

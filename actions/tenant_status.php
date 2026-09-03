@@ -15,7 +15,7 @@ $tenantId = (int) ($_POST['tenant_id'] ?? 0);
 $status = trim((string) ($_POST['status'] ?? ''));
 
 if ($tenantId <= 0 || !in_array($status, ['approved', 'rejected', 'suspended'], true)) {
-    set_flash('error', 'Invalid tenant action.');
+    set_flash('error', 'Invalid business action.');
     redirect('pages/tenants.php');
 }
 
@@ -45,10 +45,10 @@ if ($status !== 'approved') {
     }
 }
 
-log_activity($pdo, 'tenant.status_changed', 'Tenant status changed.', [
+log_activity($pdo, 'tenant.status_changed', 'Business status changed.', [
     'tenant_id' => $tenantId,
     'status' => $status,
 ]);
 
-set_flash('success', 'Tenant status updated.');
+set_flash('success', 'Business status updated.');
 redirect('pages/tenants.php');

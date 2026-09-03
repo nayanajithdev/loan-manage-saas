@@ -100,16 +100,16 @@ require __DIR__ . '/../includes/layout_start.php';
             </div>
             <div class="field">
                 <label>New Password</label>
-                <input type="password" name="new_password" minlength="6" required>
+                <input type="password" name="new_password" minlength="8" required>
             </div>
             <div class="field">
                 <label>Confirm New Password</label>
-                <input type="password" name="confirm_password" minlength="6" required>
+                <input type="password" name="confirm_password" minlength="8" required>
             </div>
 
             <div class="field full profile-security-note">
                 <strong>Security note</strong>
-                <p>Use a unique password with at least 6 characters.</p>
+                <p>Use a unique password with at least 8 characters, including one letter and one number.</p>
             </div>
 
             <div class="field full form-actions">

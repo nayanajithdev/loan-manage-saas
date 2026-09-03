@@ -11,6 +11,7 @@ require_tenant_context();
 
 $pageTitle = 'Loans';
 $activePage = 'loans';
+$canViewCustomer = can('customers.view');
 
 $allowedStatuses = ['active', 'closed'];
 $status = strtolower(trim((string) ($_GET['status'] ?? 'active')));
@@ -39,7 +40,10 @@ $formatLoanStatusOption = static function (string $label, int $count): string {
     return $label . ' - ' . str_pad((string) $count, 2, '0', STR_PAD_LEFT);
 };
 
-$sql = "SELECT l.*, c.full_name, COALESCE(r.name, 'No route') AS route_name,
+$customerSelect = $canViewCustomer
+    ? 'c.customer_code, c.full_name, c.nic'
+    : 'c.customer_code';
+$sql = "SELECT l.*, " . $customerSelect . ", COALESCE(r.name, 'No route') AS route_name,
             COALESCE((SELECT SUM(li.due_amount - li.paid_amount) FROM loan_installments li WHERE li.loan_id = l.id AND li.status IN ('pending', 'partial', 'overdue')), 0) AS outstanding_amount,
             COALESCE((SELECT COUNT(*) FROM loan_installments li WHERE li.loan_id = l.id AND li.status IN ('pending', 'partial', 'overdue')), 0) AS remaining_installment_count,
             (SELECT MAX(co.collected_on) FROM collections co WHERE co.loan_id = l.id) AS closed_on
@@ -52,10 +56,15 @@ $sql = "SELECT l.*, c.full_name, COALESCE(r.name, 'No route') AS route_name,
 $params = tenant_scope_params(['status' => $status]);
 if ($search !== '') {
     $searchLike = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search) . '%';
-    $sql .= " AND (l.loan_number LIKE :search_loan ESCAPE '\\\\' OR c.full_name LIKE :search_name ESCAPE '\\\\' OR c.nic LIKE :search_nic ESCAPE '\\\\')";
+    $sql .= " AND (l.loan_number LIKE :search_loan ESCAPE '\\\\' OR c.customer_code LIKE :search_customer_code ESCAPE '\\\\'";
     $params['search_loan'] = $searchLike;
-    $params['search_name'] = $searchLike;
-    $params['search_nic'] = $searchLike;
+    $params['search_customer_code'] = $searchLike;
+    if ($canViewCustomer) {
+        $sql .= " OR c.full_name LIKE :search_name ESCAPE '\\\\' OR c.nic LIKE :search_nic ESCAPE '\\\\'";
+        $params['search_name'] = $searchLike;
+        $params['search_nic'] = $searchLike;
+    }
+    $sql .= ')';
 }
 if ($routeId > 0) {
     $sql .= ' AND l.route_id = :route_id';
@@ -67,6 +76,7 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $loans = $stmt->fetchAll();
 $canCreateLoan = can('loans.create');
+$loanSearchAriaLabel = $canViewCustomer ? 'Search by loan number, customer name or ID number' : 'Search by loan number or customer reference';
 
 $renderLoansHead = static function (string $status): string {
     ob_start(); ?>
@@ -87,7 +97,7 @@ $renderLoansHead = static function (string $status): string {
     <?php return (string) ob_get_clean();
 };
 
-$renderLoansBody = static function (array $loans, PDO $pdo, string $status): string {
+$renderLoansBody = static function (array $loans, PDO $pdo, string $status) use ($canViewCustomer): string {
     $columnCount = $status === 'closed' ? 7 : 8;
     ob_start();
     if (!$loans): ?>
@@ -101,7 +111,7 @@ $renderLoansBody = static function (array $loans, PDO $pdo, string $status): str
             <?php $selectUrl = url('pages/loan_edit.php?loan_id=' . (int) $loan['id']); ?>
             <tr class="table-row-clickable" data-select-url="<?= e($selectUrl) ?>">
                 <td><?= e($loan['loan_number']) ?></td>
-                <td><?= e($loan['full_name']) ?></td>
+                <td><?= e($canViewCustomer ? (string) $loan['full_name'] : loan_customer_display_label($loan)) ?></td>
                 <td><?= e((string) ($loan['route_name'] ?? 'No route')) ?></td>
                 <td><?= e(money_label($pdo, (float) $loan['principal_amount'])) ?></td>
                 <td><?= e(money_label($pdo, (float) $loan['total_amount'])) ?></td>
@@ -124,7 +134,7 @@ $renderLoansBody = static function (array $loans, PDO $pdo, string $status): str
     return (string) ob_get_clean();
 };
 
-$renderLoansCards = static function (array $loans, PDO $pdo, string $status): string {
+$renderLoansCards = static function (array $loans, PDO $pdo, string $status) use ($canViewCustomer): string {
     ob_start();
     if (!$loans): ?>
         <div class="loan-mobile-empty">No loans yet.</div>
@@ -139,7 +149,7 @@ $renderLoansCards = static function (array $loans, PDO $pdo, string $status): st
             <article class="loan-mobile-card table-row-clickable" data-select-url="<?= e($selectUrl) ?>">
                 <div class="loan-mobile-card-head">
                     <strong class="loan-mobile-number"><?= e((string) $loan['loan_number']) ?></strong>
-                    <strong class="loan-mobile-customer"><?= e((string) $loan['full_name']) ?></strong>
+                    <strong class="loan-mobile-customer"><?= e($canViewCustomer ? (string) $loan['full_name'] : loan_customer_display_label($loan)) ?></strong>
                 </div>
                 <div class="loan-mobile-card-body">
                     <div class="loan-mobile-metric">
@@ -218,7 +228,7 @@ require __DIR__ . '/../includes/layout_start.php';
         <div class="field loan-search-field">
             <label class="sr-only">Search loans</label>
             <div class="search-control">
-                <input type="text" name="q" value="<?= e($search) ?>" placeholder="Search..." aria-label="Search by loan number, customer name or ID number">
+                <input type="text" name="q" value="<?= e($search) ?>" placeholder="Search..." aria-label="<?= e($loanSearchAriaLabel) ?>">
                 <button type="submit" class="btn search-submit" aria-label="Search loans">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
                 </button>
@@ -276,7 +286,7 @@ require __DIR__ . '/../includes/layout_start.php';
             <div class="field loan-mobile-search-field">
                 <label class="sr-only">Search loans</label>
                 <div class="search-control">
-                    <input type="text" name="q" value="<?= e($search) ?>" placeholder="Search..." aria-label="Search by loan number, customer name or ID number">
+                    <input type="text" name="q" value="<?= e($search) ?>" placeholder="Search..." aria-label="<?= e($loanSearchAriaLabel) ?>">
                     <button type="submit" class="btn search-submit" aria-label="Search loans">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
                     </button>

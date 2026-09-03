@@ -45,6 +45,8 @@ try {
     ensure_loan_interest_rate_months_schema($pdo);
     ensure_customer_documents_schema($pdo);
     ensure_customer_docs_guard_file(customer_documents_upload_dir_abs());
+    ensure_public_upload_guard_file(profile_avatar_upload_dir_abs());
+    ensure_public_upload_guard_file(business_icon_upload_dir_abs());
     ensure_customer_note_schema($pdo);
     ensure_system_settings_schema($pdo);
     ensure_holidays_schema($pdo);
@@ -71,6 +73,7 @@ $publicScripts = [
     'auth_login.php',
     'auth_owner_login.php',
     'tenant_register.php',
+
     'auth_forgot_password.php',
     'auth_reset_password.php',
     'auth_setup_superadmin.php',

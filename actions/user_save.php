@@ -98,10 +98,12 @@ if ($password !== $confirmPassword) {
     redirect($resolvedCreateReturnTo);
 }
 
-if (strlen($password) < 6) {
-    set_flash('error', 'Password must be at least 6 characters.');
+if (!password_meets_policy($password)) {
+    set_flash('error', password_policy_message());
     redirect($resolvedCreateReturnTo);
 }
+
+$tenantId = require_tenant_context('index.php');
 
 $existsStmt = $pdo->prepare('SELECT id FROM users WHERE username = :username LIMIT 1');
 $existsStmt->execute(['username' => $username]);
@@ -118,7 +120,6 @@ if ($emailStmt->fetch()) {
 }
 
 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-$tenantId = require_tenant_context('index.php');
 
 $insertStmt = $pdo->prepare(
     'INSERT INTO users (tenant_id, full_name, username, email, password_hash, role, status)

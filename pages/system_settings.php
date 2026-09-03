@@ -33,7 +33,7 @@ require __DIR__ . '/../includes/layout_start.php';
                 <div id="system-settings-panel-system" class="loan-tab-panel system-settings-tab-panel is-active" data-system-settings-tab-panel="system" role="tabpanel" aria-labelledby="system-settings-tab-system">
                     <div class="settings-col">
                         <?php if (!$canEditSystemSettings): ?>
-                            <p class="muted-block">View only. Only Owner can change system settings.</p>
+                            <p class="muted-block">View only. Only Business Owner can change system settings.</p>
                         <?php endif; ?>
                         <div class="form-grid settings-system-grid">
                             <div class="field">

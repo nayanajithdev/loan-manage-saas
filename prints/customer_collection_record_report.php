@@ -19,23 +19,25 @@ if (empty($canViewLoanCollectionRecords)) {
                 <div class="print-info-row">
                     <strong>Name</strong>
                     <span>:</span>
-                    <p><?= e((string) $loan['full_name']) ?></p>
+                    <p><?= e($loanCustomerLabel) ?></p>
                 </div>
-                <div class="print-info-row">
-                    <strong>Mobile no</strong>
-                    <span>:</span>
-                    <p><?= e(trim((string) ($loan['customer_phone'] ?? '')) !== '' ? (string) $loan['customer_phone'] : '-') ?></p>
-                </div>
-                <div class="print-info-row">
-                    <strong>NIC</strong>
-                    <span>:</span>
-                    <p><?= e($customerNicNumber) ?></p>
-                </div>
-                <div class="print-info-row">
-                    <strong>Address</strong>
-                    <span>:</span>
-                    <p><?= e(trim((string) ($loan['customer_address'] ?? '')) !== '' ? (string) $loan['customer_address'] : '-') ?></p>
-                </div>
+                <?php if ($canViewCustomer): ?>
+                    <div class="print-info-row">
+                        <strong>Mobile no</strong>
+                        <span>:</span>
+                        <p><?= e(trim((string) ($loan['customer_phone'] ?? '')) !== '' ? (string) $loan['customer_phone'] : '-') ?></p>
+                    </div>
+                    <div class="print-info-row">
+                        <strong>NIC</strong>
+                        <span>:</span>
+                        <p><?= e($customerNicNumber) ?></p>
+                    </div>
+                    <div class="print-info-row">
+                        <strong>Address</strong>
+                        <span>:</span>
+                        <p><?= e(trim((string) ($loan['customer_address'] ?? '')) !== '' ? (string) $loan['customer_address'] : '-') ?></p>
+                    </div>
+                <?php endif; ?>
                 <div class="print-info-row">
                     <strong>Loan amount</strong>
                     <span>:</span>

@@ -85,6 +85,7 @@ if (isset($_FILES['business_icon']) && is_array($_FILES['business_icon']) && (in
         set_flash('error', 'Failed to create business icon folder.');
         redirect('pages/settings.php');
     }
+    ensure_public_upload_guard_file($uploadDirAbs);
 
     try {
         $random = bin2hex(random_bytes(4));

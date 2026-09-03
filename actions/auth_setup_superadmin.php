@@ -36,8 +36,8 @@ if ($password !== $confirmPassword) {
     redirect(owner_secret_login_path());
 }
 
-if (strlen($password) < 6) {
-    set_flash('error', 'Password must be at least 6 characters.');
+if (!password_meets_policy($password)) {
+    set_flash('error', password_policy_message());
     redirect(owner_secret_login_path());
 }
 

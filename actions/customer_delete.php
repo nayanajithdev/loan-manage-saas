@@ -68,14 +68,17 @@ try {
         if ($loanIds !== []) {
             $placeholders = implode(',', array_fill(0, count($loanIds), '?'));
 
-            $deleteCollectionsStmt = $pdo->prepare("DELETE FROM collections WHERE loan_id IN ($placeholders)");
-            $deleteCollectionsStmt->execute($loanIds);
+            $scopedLoanIds = array_values($loanIds);
+            $scopedLoanIds[] = require_tenant_context('pages/customers.php');
 
-            $deleteInstallmentsStmt = $pdo->prepare("DELETE FROM loan_installments WHERE loan_id IN ($placeholders)");
-            $deleteInstallmentsStmt->execute($loanIds);
+            $deleteCollectionsStmt = $pdo->prepare("DELETE FROM collections WHERE loan_id IN ($placeholders) AND tenant_id = ?");
+            $deleteCollectionsStmt->execute($scopedLoanIds);
 
-            $deleteLoansStmt = $pdo->prepare("DELETE FROM loans WHERE id IN ($placeholders)");
-            $deleteLoansStmt->execute($loanIds);
+            $deleteInstallmentsStmt = $pdo->prepare("DELETE FROM loan_installments WHERE loan_id IN ($placeholders) AND tenant_id = ?");
+            $deleteInstallmentsStmt->execute($scopedLoanIds);
+
+            $deleteLoansStmt = $pdo->prepare("DELETE FROM loans WHERE id IN ($placeholders) AND tenant_id = ?");
+            $deleteLoansStmt->execute($scopedLoanIds);
         }
     }
 

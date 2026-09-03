@@ -32,6 +32,7 @@ $roundedInstallmentAmount = round((float) ($_POST['rounded_installment_amount'] 
 $useRoundedInstallment = ((int) ($_POST['use_rounded_installment'] ?? 0) === 1) || $roundedInstallmentAmount > 0;
 $canEditLoan = can('loans.edit');
 $canScheduleNextPayment = can('collections.schedule');
+$canViewCustomer = can('customers.view');
 $routeId = normalize_route_id($pdo, $routeIdInput);
 
 if ($loanId <= 0) {
@@ -160,6 +161,21 @@ if ($scheduleNextPayment) {
     }
 }
 
+if (!$canViewCustomer) {
+    $existingLoanCustomerStmt = $pdo->prepare('SELECT customer_id FROM loans WHERE id = :id AND ' . tenant_scope_sql() . ' LIMIT 1');
+    $existingLoanCustomerStmt->execute(tenant_scope_params(['id' => $loanId]));
+    $existingCustomerId = (int) ($existingLoanCustomerStmt->fetchColumn() ?: 0);
+    if ($existingCustomerId <= 0) {
+        set_flash('error', 'Loan not found.');
+        redirect('pages/loan_edit.php?loan_id=' . $loanId);
+    }
+
+    if ($customerId !== $existingCustomerId) {
+        set_flash('error', 'You do not have permission to change loan customer.');
+        redirect('pages/loan_edit.php?loan_id=' . $loanId);
+    }
+}
+
 $customerStmt = $pdo->prepare('SELECT id FROM customers WHERE id = :id AND ' . tenant_scope_sql());
 $customerStmt->execute(tenant_scope_params(['id' => $customerId]));
 if (!$customerStmt->fetch()) {
@@ -197,10 +213,10 @@ function loan_update_collection_link_count(PDO $pdo, int $installmentId): int
 {
     static $stmt = null;
     if (!$stmt instanceof PDOStatement) {
-        $stmt = $pdo->prepare('SELECT COUNT(*) FROM collections WHERE installment_id = :installment_id');
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM collections WHERE installment_id = :installment_id AND ' . tenant_scope_sql());
     }
 
-    $stmt->execute(['installment_id' => $installmentId]);
+    $stmt->execute(tenant_scope_params(['installment_id' => $installmentId]));
     return (int) $stmt->fetchColumn();
 }
 
@@ -265,44 +281,45 @@ function loan_update_rebuild_unpaid_schedule(
     $updatedExisting = 0;
 
     if ($newOutstanding <= 0.009) {
-        $deleteStmt = $pdo->prepare('DELETE FROM loan_installments WHERE id = :id AND loan_id = :loan_id');
+        $deleteStmt = $pdo->prepare('DELETE FROM loan_installments WHERE id = :id AND loan_id = :loan_id AND ' . tenant_scope_sql());
         $settleStmt = $pdo->prepare(
             "UPDATE loan_installments
              SET due_amount = :due_amount,
                  status = 'paid'
              WHERE id = :id
-               AND loan_id = :loan_id"
+               AND loan_id = :loan_id
+               AND " . tenant_scope_sql()
         );
 
         foreach ($unpaidRows as $row) {
             $rowId = (int) $row['id'];
             $paidAmount = round((float) ($row['paid_amount'] ?? 0), 2);
             if ($paidAmount <= 0 && loan_update_collection_link_count($pdo, $rowId) === 0) {
-                $deleteStmt->execute(['id' => $rowId, 'loan_id' => $loanId]);
+                $deleteStmt->execute(tenant_scope_params(['id' => $rowId, 'loan_id' => $loanId]));
                 $deletedExisting += $deleteStmt->rowCount();
                 continue;
             }
 
-            $settleStmt->execute([
+            $settleStmt->execute(tenant_scope_params([
                 'due_amount' => $paidAmount,
                 'id' => $rowId,
                 'loan_id' => $loanId,
-            ]);
+            ]));
             $updatedExisting++;
         }
 
         $remainingEndDateStmt = $pdo->prepare(
             "SELECT COALESCE(
-                (SELECT MAX(due_date) FROM loan_installments WHERE loan_id = :installment_loan_id),
-                (SELECT MAX(collected_on) FROM collections WHERE loan_id = :collection_loan_id),
+                (SELECT MAX(due_date) FROM loan_installments WHERE loan_id = :installment_loan_id AND " . tenant_scope_sql() . "),
+                (SELECT MAX(collected_on) FROM collections WHERE loan_id = :collection_loan_id AND " . tenant_scope_sql() . "),
                 :fallback_end_date
             )"
         );
-        $remainingEndDateStmt->execute([
+        $remainingEndDateStmt->execute(tenant_scope_params([
             'installment_loan_id' => $loanId,
             'collection_loan_id' => $loanId,
             'fallback_end_date' => today(),
-        ]);
+        ]));
         $settledEndDate = (string) ($remainingEndDateStmt->fetchColumn() ?: today());
 
         return [
@@ -358,12 +375,12 @@ function loan_update_rebuild_unpaid_schedule(
     if ($targetUnpaidCount < count($slots)) {
         $removeSlots = array_slice($slots, $targetUnpaidCount);
         $slots = array_slice($slots, 0, $targetUnpaidCount);
-        $deleteStmt = $pdo->prepare('DELETE FROM loan_installments WHERE id = :id AND loan_id = :loan_id');
+        $deleteStmt = $pdo->prepare('DELETE FROM loan_installments WHERE id = :id AND loan_id = :loan_id AND ' . tenant_scope_sql());
         foreach ($removeSlots as $slot) {
             if ((float) $slot['paid_amount'] > 0 || loan_update_collection_link_count($pdo, (int) $slot['id']) > 0) {
                 throw new RuntimeException('Cannot shorten the schedule because a removed installment already has payment history.');
             }
-            $deleteStmt->execute(['id' => (int) $slot['id'], 'loan_id' => $loanId]);
+            $deleteStmt->execute(tenant_scope_params(['id' => (int) $slot['id'], 'loan_id' => $loanId]));
             $deletedExisting += $deleteStmt->rowCount();
         }
     }
@@ -520,8 +537,10 @@ try {
     $outstandingStmt = $pdo->prepare('SELECT COALESCE(SUM(due_amount - paid_amount), 0) FROM loan_installments WHERE loan_id = :loan_id AND ' . tenant_scope_sql());
     $outstandingStmt->execute(tenant_scope_params(['loan_id' => $loanId]));
     $currentOutstanding = (float) $outstandingStmt->fetchColumn();
-    $hasLegacyPreCollected = $collectionsCount === 0 && ($currentOutstanding + 0.009) < (float) $loan['total_amount'];
+    $storedTotalAmount = (float) ($loan['total_amount'] ?? 0);
+    $hasLegacyPreCollected = $collectionsCount === 0 && ($currentOutstanding + 0.009) < $storedTotalAmount;
     $repaymentLocked = $collectionsCount > 0 || $hasLegacyPreCollected;
+    $extendsCollectedLoan = $totalAmount > ($storedTotalAmount + 0.009);
 
     $loanInterestRateType = normalize_interest_rate_type((string) ($loan['interest_rate_type'] ?? 'amount_based'));
     $loanInterestRateMonths = normalize_interest_rate_months((int) ($loan['interest_rate_months'] ?? 1));
